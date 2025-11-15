@@ -2,11 +2,11 @@
 name = "gencodedoc"
 version = "2.0.0"
 description = "Smart documentation generator and intelligent versioning system with MCP support"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["fkom13 <geminiEA@mail.com>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/yourusername/gencodedoc"
-repository = "https://github.com/yourusername/gencodedoc"
+homepage = "https://github.com/fkom13/gencodedoc"
+repository = "https://github.com/fkom13/gencodedoc"
 keywords = ["documentation", "versioning", "mcp", "snapshot", "diff", "ai-tools"]
 classifiers = [
     "Development Status :: 4 - Beta",
