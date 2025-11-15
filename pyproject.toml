@@ -1,0 +1,61 @@
+[tool.poetry]
+name = "gencodedoc"
+version = "2.0.0"
+description = "Smart documentation generator and intelligent versioning system with MCP support"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/yourusername/gencodedoc"
+repository = "https://github.com/yourusername/gencodedoc"
+keywords = ["documentation", "versioning", "mcp", "snapshot", "diff", "ai-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Software Development :: Version Control",
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+typer = {extras = ["all"], version = "^0.20.0"}
+rich = "^13.7.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+pyyaml = "^6.0.1"
+pathspec = "^0.11.2"
+zstandard = "^0.22.0"
+watchdog = "^3.0.0"
+fastapi = "^0.121.0"
+uvicorn = "^0.38.0"
+python-multipart = "^0.0.6"
+httpx = "^0.25.2"
+aiofiles = "^23.2.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
+pytest-asyncio = "^0.21.1"
+black = "^23.12.1"
+ruff = "^0.1.8"
+mypy = "^1.7.1"
+
+[tool.poetry.scripts]
+gencodedoc = "gencodedoc.cli.main:app"
+gcd = "gencodedoc.cli.main:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true

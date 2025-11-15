@@ -1,0 +1,29 @@
+# Configuration preset for Web projects
+name: "Web"
+description: "Optimized for web development projects"
+
+include_patterns:
+  - "*.html"
+  - "*.css"
+  - "*.scss"
+  - "*.sass"
+  - "*.less"
+  - "*.js"
+  - "*.ts"
+  - "*.jsx"
+  - "*.tsx"
+  - "*.json"
+  - "*.md"
+
+exclude_patterns:
+  - "*/node_modules/*"
+  - "*/dist/*"
+  - "*/build/*"
+  - "*/.cache/*"
+  - "*/.vscode/*"
+  - "*/.idea/*"
+
+documentation:
+  output_format: "html"
+  include_styles: true
+  include_scripts: true

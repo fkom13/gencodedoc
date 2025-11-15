@@ -1,0 +1,20 @@
+# Configuration preset for Go projects
+name: "Go"
+description: "Optimized for Go projects"
+
+include_patterns:
+  - "*.go"
+  - "*.md"
+  - "go.mod"
+  - "go.sum"
+  - "*.yaml"
+  - "*.yml"
+
+exclude_patterns:
+  - "*/vendor/*"
+  - "*/.git/*"
+
+documentation:
+  output_format: "markdown"
+  include_go_doc: true
+  include_interfaces: true

@@ -1,0 +1,25 @@
+# Configuration preset for Python projects
+name: "Python"
+description: "Optimized for Python projects"
+
+include_patterns:
+  - "*.py"
+  - "*.md"
+  - "*.rst"
+  - "*.txt"
+  - "requirements*.txt"
+  - "setup.py"
+  - "pyproject.toml"
+
+exclude_patterns:
+  - "*/__pycache__/*"
+  - "*/.pytest_cache/*"
+  - "*/venv/*"
+  - "*/env/*"
+  - "*/.venv/*"
+  - "*.pyc"
+
+documentation:
+  output_format: "markdown"
+  include_docstrings: true
+  include_type_hints: true

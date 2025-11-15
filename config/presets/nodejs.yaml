@@ -1,0 +1,24 @@
+# Configuration preset for Node.js projects
+name: "Node.js"
+description: "Optimized for Node.js projects"
+
+include_patterns:
+  - "*.js"
+  - "*.ts"
+  - "*.json"
+  - "*.md"
+  - "package*.json"
+  - "*.yml"
+  - "*.yaml"
+
+exclude_patterns:
+  - "*/node_modules/*"
+  - "*/dist/*"
+  - "*/build/*"
+  - "*/.npm/*"
+  - "*/.cache/*"
+
+documentation:
+  output_format: "markdown"
+  include_jSDoc: true
+  include_typescript_types: true
