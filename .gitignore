@@ -71,6 +71,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# MCP Registry Tokens
+.mcpregistry_*
+
 # VS Code
 .vscode/
 

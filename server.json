@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.fkom13/gencodedoc",
+  "description": "Versioning de code et génération de documentation intelligents. Supporte CLI, API REST, et MCP.",
+  "repository": {
+    "url": "https://github.com/fkom13/gencodedoc",
+    "source": "github"
+  },
+  "version": "2.0.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "gencodedoc",
+      "version": "2.0.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
