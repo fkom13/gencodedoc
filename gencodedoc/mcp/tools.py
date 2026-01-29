@@ -280,6 +280,11 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         "description": "Config key (e.g., 'autosave.enabled')"
                     },
                     "value": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"type": "number"},
+                            {"type": "boolean"}
+                        ],
                         "description": "Value to set (string, number, or boolean)"
                     }
                 },
