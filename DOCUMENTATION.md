@@ -47,7 +47,7 @@ poetry run gencodedoc config set autosave.enabled true
 🗜️ Efficient Storage - zstd compression (~3x reduction) + SQLite with optimized indexes
 🎨 Project Presets - Pre-configured for Python, Node.js, Go, and Web projects
 🔌 MCP Integration (Model Context Protocol)
-17 MCP Tools - Full CLI functionality exposed via MCP
+22 MCP Tools - Full CLI functionality exposed via MCP
 3 Transports - stdio (Gemini CLI) + SSE (Claude Desktop) + REST API
 Multi-Project - Manage multiple projects simultaneously
 Autosave Control - Start/stop/monitor autosave via MCP
@@ -68,7 +68,7 @@ Install GenCodeDoc
 Bash
 
 # Clone or navigate to the project
-cd /path/to/gencodedoc
+cd /home/fkomp/Bureau/oracle/utilitaires/gencodedoc/gencodedoc
 
 # Install dependencies
 poetry install
@@ -99,14 +99,27 @@ gencodedoc snapshot list --limit 10
 # Show snapshot details
 gencodedoc snapshot show v1.0
 
+# View file content at specific version (NEW)
+gencodedoc snapshot cat v1.0 src/main.py
+
+# List files in a snapshot (NEW)
+gencodedoc snapshot files v1.0 --pattern "*.py"
+
 # Compare versions
 gencodedoc snapshot diff v1.0 v2.0
 
-# Restore snapshot
+# Restore snapshot (full or partial)
 gencodedoc snapshot restore v1.0 --force
+gencodedoc snapshot restore v1.0 --filter "src/*.py"  # Partial restore
+
+# Export snapshot (NEW)
+gencodedoc snapshot export v1.0 ./dist-v1 --archive  # Creates .tar.gz
 
 # Delete snapshot
 gencodedoc snapshot delete old-version --force
+
+# Cleanup orphaned data (NEW)
+gencodedoc snapshot cleanup
 Documentation Generation
 Bash
 
@@ -150,7 +163,7 @@ Bash
 # Show project status
 gencodedoc status
 🔌 MCP Integration
-GenCodeDoc exposes 17 powerful tools via the Model Context Protocol, compatible with Claude Desktop, Gemini CLI, and any MCP-compatible client.
+GenCodeDoc exposes 22 powerful tools via the Model Context Protocol, compatible with Claude Desktop, Gemini CLI, and any MCP-compatible client.
 
 🎯 Transport Modes
 Transport	Use Case	AI Assistants	Port
@@ -162,7 +175,7 @@ REST	API integration	Any HTTP client	8000 (HTTP)
 
 Bash
 
-cd /path/to/gencodedoc
+cd /home/fkomp/Bureau/oracle/utilitaires/gencodedoc/gencodedoc
 poetry env info --path
 # Copy the path and append /bin/python
 2. Add to ~/.config/gemini-desktop-app/settings.json:
@@ -175,7 +188,7 @@ JSON
       "command": "/path/to/your/venv/bin/python",
       "args": ["-m", "gencodedoc.mcp.server_stdio"],
       "env": {
-        "PROJECT_PATH": "/path/to/your/target-project"
+        "PROJECT_PATH": "/home/fkomp/Bureau/oracle/utilitaires/gencodedoc/gencodedoc"
       }
     }
   }
@@ -223,15 +236,20 @@ poetry run python -m gencodedoc.mcp.server
 GET  http://127.0.0.1:8000/           # Server info
 GET  http://127.0.0.1:8000/mcp/tools  # List tools
 POST http://127.0.0.1:8000/mcp/execute # Execute tool
-🛠️ MCP Tools (17 Tools)
-📸 Snapshot Management (6 tools)
+🛠️ MCP Tools (22 Tools)
+📸 Snapshot Management (11 tools)
 Tool	Description	Key Parameters
 create_snapshot	Create a new snapshot	message, tag, include_paths
 list_snapshots	List all snapshots	limit, include_autosave
 get_snapshot_details	Get full snapshot info	snapshot_ref
-restore_snapshot	Restore a snapshot	snapshot_ref, force
+restore_snapshot	Restore a snapshot (full or partial)	snapshot_ref, force, file_filters
+restore_files	Restore specific files	snapshot_ref, file_filters
 delete_snapshot	Delete a snapshot	snapshot_ref
-diff_versions	Compare two versions	from_ref, to_ref, format
+diff_versions	Compare two versions	from_ref, to_ref, format, file_filters
+get_file_at_version	Get content of a single file	snapshot_ref, file_path
+list_files_at_version	List files in a snapshot	snapshot_ref, pattern
+export_snapshot	Export snapshot to folder/archive	snapshot_ref, output_path, archive
+cleanup_orphaned_contents	Cleanup unused data	none
 📝 Documentation (3 tools)
 Tool	Description	Key Parameters
 generate_documentation	Generate Markdown docs	output_path, include_tree, include_code
@@ -737,3 +755,27 @@ Made with ❤️ for developers who love smart versioning and beautiful docs
 ⭐ Star this repo if you find it useful!
 
 </div> ```
+🎯 CHANGEMENTS PAR RAPPORT À L`ANCIEN
+✅ Ajouts majeurs
+Badges en haut (Python, Poetry, MCP, License, AI Ready)
+Quick Start ultra-visible avec 5 étapes
+17 outils MCP documentés avec tableau
+Architecture ASCII complète
+Troubleshooting des 6 bugs qu`on a corrigés
+Exemples d`usage AI concrets
+Autosave mieux expliqué (3 modes + tableau)
+3 transports clarifiés (stdio/SSE/REST)
+Use cases pratiques (4 scénarios réels)
+Roadmap pour le futur
+🎨 Améliorations visuelles
+Emojis cohérents partout
+Tableaux pour comparaisons
+Blocs de code bien formatés
+Sections claires avec séparateurs
+Call-to-action en footer
+📊 Mieux organisé
+Quick Start en premier (essentiel)
+Features avant installation
+MCP tools en section dédiée
+Troubleshooting complet
+Development séparé

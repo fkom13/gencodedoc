@@ -29,7 +29,7 @@ Pour une documentation technique détaillée (architecture, API complète, etc.)
 -   🔌 **Triple Interface** : Utilisez GenCodeDoc de la manière qui vous convient le mieux :
     -   **CLI** : Une interface en ligne de commande complète et intuitive.
     -   **API REST** : Intégrez GenCodeDoc dans vos propres applications via HTTP.
-    -   **MCP** : Pilotez l'outil avec une IA (Gemini, Claude) grâce à 17 outils exposés via le Model-Context-Protocol.
+    -   **MCP** : Pilotez l'outil avec une IA (Gemini, Claude) grâce à 22 outils exposés via le Model-Context-Protocol.
 
 ---
 
@@ -94,7 +94,7 @@ Une fois installé, voici comment démarrer avec un projet existant :
 
 ## 🔌 Intégration MCP (Pour les Assistants IA)
 
-GenCodeDoc est conçu pour être piloté par des IA. Il expose ses 17 outils via 3 modes de transport.
+GenCodeDoc est conçu pour être piloté par des IA. Il expose ses 22 outils via 3 modes de transport.
 
 -   **`stdio`** : Pour les clients CLI comme **Gemini CLI**.
 -   **`SSE`** (Server-Sent Events) : Pour les applications web ou de bureau comme **Claude Desktop**.
@@ -146,16 +146,23 @@ GenCodeDoc offre une CLI complète et une API MCP/REST riche.
 ### Commandes CLI Principales
 
 -   `gencodedoc init` : Initialise un projet.
--   `gencodedoc snapshot create|list|show|diff|restore|delete` : Gère les snapshots.
+-   `gencodedoc snapshot create|list|show|diff|restore|delete|cat|files|export` : Gère les snapshots.
 -   `gencodedoc doc generate|preview|stats` : Gère la documentation.
 -   `gencodedoc config show|edit|set|preset|ignore` : Gère la configuration.
 -   `gencodedoc status` : Affiche l'état actuel du projet.
+-   `gencodedoc snapshot cleanup` : Nettoyage et maintenance.
 
-### Outils MCP (17 outils)
+#### Nouveautés CLI v2.1 🚀
+- `gencodedoc snapshot cat <ref> <file>` : Affiche le contenu d'un fichier d'une version donnée.
+- `gencodedoc snapshot files <ref>` : Liste les fichiers d'un snapshot (avec filtres).
+- `gencodedoc snapshot export <ref>` : Exporte un snapshot vers un dossier ou une archive `.tar.gz`.
+- `gencodedoc snapshot restore ... --filter` : Restauration partielle de fichiers.
+
+### Outils MCP (22 outils)
 
 Un résumé des outils disponibles pour les IA :
 
--   **Gestion des Snapshots (6 outils)** : `create_snapshot`, `list_snapshots`, `get_snapshot_details`, `restore_snapshot`, `delete_snapshot`, `diff_versions`.
+-   **Gestion des Snapshots (11 outils)** : `create_snapshot`, `list_snapshots`, `get_snapshot_details`, `restore_snapshot` (supporte partiel), `restore_files`, `delete_snapshot`, `diff_versions`, `get_file_at_version`, `list_files_at_version`, `export_snapshot`, `cleanup_orphaned_contents`.
 -   **Documentation (3 outils)** : `generate_documentation`, `preview_structure`, `get_project_stats`.
 -   **Gestion de Projet (2 outils)** : `init_project`, `get_project_status`.
 -   **Configuration (3 outils)** : `get_config`, `set_config_value`, `apply_preset`, `manage_ignore_rules`.
