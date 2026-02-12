@@ -222,28 +222,21 @@ class DocumentationGenerator:
 
         # Apply exclusions
         if exclude_paths:
-            from ..utils.filters import PathMatcher
-            exclude_set = set()
-            for p in exclude_paths:
-                full_p = self.config.project_path / p
-                if full_p.exists():
-                     if full_p.is_file():
-                         exclude_set.add(full_p)
-                     elif full_p.is_dir():
-                         # If exclude is a dir, exclude all files in it
-                         # Simple way: check if file starts with excluded dir
-                         pass
+            import fnmatch
             
-            # Better exclusion using patterns logic or simple path check
             final_files = []
             for f in files:
                 should_exclude = False
+                relative_path = f.relative_to(self.config.project_path)
+                
                 for ex_path in exclude_paths:
                      # Check if file matches exclusion pattern or path
-                     import fnmatch
-                     if fnmatch.fnmatch(f.name, ex_path) or fnmatch.fnmatch(str(f.relative_to(self.config.project_path)), ex_path):
+                     # Force forward slashes for consistency with config patterns
+                     rel_str = str(relative_path).replace('\\', '/')
+                     if fnmatch.fnmatch(f.name, ex_path) or fnmatch.fnmatch(rel_str, ex_path):
                          should_exclude = True
                          break
+                
                 if not should_exclude:
                     final_files.append(f)
             files = final_files

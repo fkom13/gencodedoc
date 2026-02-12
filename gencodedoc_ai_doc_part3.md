@@ -1,3 +1,340 @@
+# gencodedoc (Partie 3)
+> Suite de la documentation (12/02/2026)
+
+### 📄 `gencodedoc/mcp/server_stdio.py`
+
+```python
+"""MCP server with stdio transport for CLI integration"""
+import sys
+import json
+import asyncio
+from pathlib import Path
+from typing import Any, Dict, Optional
+import os
+
+from ..core.config import ConfigManager
+from ..core.versioning import VersionManager
+from ..core.documentation import DocumentationGenerator
+from .tools import get_tools_definition, execute_tool
+
+
+class MCPStdioServer:
+    """MCP Server using stdio transport"""
+
+    def __init__(self, default_project_path: Path):
+        self.default_project_path = default_project_path
+
+        # Cache des managers par projet
+        self._managers_cache = {}
+
+        # ✅ NOUVEAU: Autosave managers par projet
+        self._autosave_managers = {}
+
+    def _get_managers(self, project_path: Optional[Path] = None):
+        """Get or create managers for a project path"""
+        if project_path is None:
+            project_path = self.default_project_path
+
+        # Normaliser le path
+        project_path = Path(project_path).resolve()
+        path_str = str(project_path)
+
+        # Vérifier le cache
+        if path_str not in self._managers_cache:
+            # Créer les managers
+            config_manager = ConfigManager(project_path)
+            config = config_manager.load()
+            version_manager = VersionManager(config)
+            doc_generator = DocumentationGenerator(config)
+
+            self._managers_cache[path_str] = {
+                'config': config,
+                'version_manager': version_manager,
+                'doc_generator': doc_generator
+            }
+
+        return self._managers_cache[path_str]
+
+    # ═══════════════════════════════════════════════════════════
+    # AUTOSAVE MANAGEMENT
+    # ═══════════════════════════════════════════════════════════
+
+    def start_autosave(self, project_path: Path, mode: Optional[str] = None) -> dict:
+        """Start autosave for a project"""
+        from ..core.autosave import AutosaveManager
+
+        managers = self._get_managers(project_path)
+        config = managers['config']
+        version_manager = managers['version_manager']
+
+        # Update config mode if provided
+        if mode:
+            config.autosave.mode = mode
+
+        # Enable autosave
+        config.autosave.enabled = True
+
+        # Create and start
+        autosave = AutosaveManager(config, version_manager)
+        autosave.start()
+
+        # Store
+        path_str = str(project_path.resolve())
+        self._autosave_managers[path_str] = autosave
+
+        return {
+            "project": str(project_path),
+            "mode": config.autosave.mode,
+            "status": "running"
+        }
+
+    def stop_autosave(self, project_path: Path) -> dict:
+        """Stop autosave for a project"""
+        path_str = str(project_path.resolve())
+        if path_str in self._autosave_managers:
+            self._autosave_managers[path_str].stop()
+            del self._autosave_managers[path_str]
+            return {"status": "stopped"}
+        return {"status": "not_running"}
+
+    def get_autosave_status(self) -> list:
+        """Get status of all autosaves"""
+        return [
+            {
+                "project": path,
+                "status": "running",
+                "last_save": mgr.last_save.isoformat() if mgr.last_save else None
+            }
+            for path, mgr in self._autosave_managers.items()
+        ]
+
+    async def shutdown(self):
+        """Cleanup on server shutdown"""
+        for autosave in self._autosave_managers.values():
+            autosave.stop()
+        self._autosave_managers.clear()
+
+    # ═══════════════════════════════════════════════════════════
+    # REQUEST HANDLING
+    # ═══════════════════════════════════════════════════════════
+
+    async def handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Handle MCP request - Returns None for notifications"""
+        method = request.get("method")
+        params = request.get("params", {})
+        request_id = request.get("id")
+
+        # ✅ NOUVEAU: Détecter si c'est une notification (pas d'id)
+        is_notification = request_id is None
+
+        try:
+            # ✅ CORRECTION: Extraire project_path SAUF pour les outils qui en ont besoin
+            project_path = None
+
+            # ✅ NOUVEAU: Liste des outils qui ont BESOIN de project_path comme paramètre
+            TOOLS_REQUIRING_PROJECT_PATH = {
+                "init_project",
+                "start_autosave",
+                "stop_autosave"
+            }
+
+            if method == "tools/call":
+                tool_name = params.get("name")
+                tool_args = params.get("arguments", {})
+
+                if isinstance(tool_args, dict):
+                    # ✅ CORRECTION: Ne pop que si l'outil n'en a pas besoin
+                    if tool_name not in TOOLS_REQUIRING_PROJECT_PATH:
+                        project_path = tool_args.pop("project_path", None)
+                    else:
+                        # Juste extraire sans supprimer
+                        project_path = tool_args.get("project_path")
+
+            elif isinstance(params, dict):
+                # Pour les appels directs, project_path est dans params
+                project_path = params.pop("project_path", None)
+
+            # Obtenir les managers (créés dynamiquement ou depuis cache)
+            managers = self._get_managers(project_path)
+            version_manager = managers['version_manager']
+            doc_generator = managers['doc_generator']
+            config = managers['config']
+
+            # Liste des noms d'outils disponibles
+            tool_names = [t["name"] for t in get_tools_definition()]
+
+            # === DISPATCH ===
+
+            # 1. Liste des outils
+            if method == "tools/list":
+                result = {"tools": get_tools_definition()}
+
+            # 2. Appel MCP standard : tools/call avec {name, arguments}
+            elif method == "tools/call":
+                tool_name = params.get("name")
+                tool_params = params.get("arguments", {})
+
+                result = execute_tool(
+                    tool_name=tool_name,
+                    parameters=tool_params,
+                    version_manager=version_manager,
+                    doc_generator=doc_generator,
+                    config=config,
+                    server=self
+                )
+
+            # 3. Appel direct gemini-cli : nom de l'outil comme method
+            elif method in tool_names:
+                result = execute_tool(
+                    tool_name=method,
+                    parameters=params,
+                    version_manager=version_manager,
+                    doc_generator=doc_generator,
+                    config=config,
+                    server=self
+                )
+
+            # 4. Initialisation
+            elif method == "initialize":
+                result = {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "gencodedoc",
+                        "version": "2.0.0"
+                    }
+                }
+
+            # ✅ NOUVEAU: 5. Notifications (à ignorer)
+            elif method and method.startswith("notifications/"):
+                # C'est une notification, on l'ignore silencieusement
+                if is_notification:
+                    return None
+                else:
+                    # Si elle a un id (erreur du client), retourner vide
+                    result = {}
+
+            # 6. Méthode inconnue
+            else:
+                # ✅ NOUVEAU: Si c'est une notification inconnue, ignorer
+                if is_notification:
+                    return None
+
+                raise ValueError(f"Unknown method: {method}")
+
+            # ✅ NOUVEAU: Ne pas retourner de réponse pour les notifications
+            if is_notification:
+                return None
+
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id or 0,
+                "result": result
+            }
+
+        except Exception as e:
+            # ✅ NOUVEAU: Ne pas retourner d'erreur pour les notifications
+            if is_notification:
+                return None
+
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id or 0,
+                "error": {
+                    "code": -32603,
+                    "message": str(e),
+                    "data": {
+                        "traceback": str(e.__class__.__name__)
+                    }
+                }
+            }
+
+    async def run(self):
+        """Run the stdio server"""
+        while True:
+            try:
+                line = await asyncio.get_event_loop().run_in_executor(
+                    None, sys.stdin.readline
+                )
+
+                if not line:
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                # === CORRECTION : Extraire l'ID AVANT ===
+                request_id = None
+                try:
+                    request = json.loads(line)
+                    request_id = request.get("id")
+
+                except json.JSONDecodeError as e:
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "id": 0,
+                        "error": {
+                            "code": -32700,
+                            "message": f"Parse error: {str(e)}"
+                        }
+                    }
+                    print(json.dumps(error_response), flush=True)
+                    continue
+
+                # === Handle request ===
+                try:
+                    response = await self.handle_request(request)
+
+                    # ✅ NOUVEAU: Ne pas imprimer si c'est None (notification)
+                    if response is not None:
+                        print(json.dumps(response), flush=True)
+
+                except Exception as e:
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id or 0,
+                        "error": {
+                            "code": -32603,
+                            "message": f"Internal error: {str(e)}"
+                        }
+                    }
+                    print(json.dumps(error_response), flush=True)
+
+            except Exception as e:
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "error": {
+                        "code": -32603,
+                        "message": f"Fatal error: {str(e)}"
+                    }
+                }
+                print(json.dumps(error_response), flush=True)
+
+
+async def main():
+    """Main entry point"""
+    project_path = Path(os.getenv("PROJECT_PATH", Path.cwd()))
+
+    server = MCPStdioServer(project_path)
+
+    try:
+        await server.run()
+    finally:
+        await server.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+```
+
+### 📄 `gencodedoc/mcp/tools.py`
+
+```python
 """MCP tools definition and execution"""
 from typing import Any, Dict, List, Optional
 from pathlib import Path
@@ -1517,3 +1854,616 @@ Extensions: {', '.join(config.ignore.extensions)}
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
+
+```
+
+### 📄 `gencodedoc/models/__init__.py`
+
+```python
+"""Data models for gencodedoc"""
+from .config import ProjectConfig, IgnoreConfig, AutosaveConfig
+from .snapshot import Snapshot, SnapshotMetadata, FileEntry, SnapshotDiff
+
+__all__ = [
+    "ProjectConfig",
+    "IgnoreConfig",
+    "AutosaveConfig",
+    "Snapshot",
+    "SnapshotMetadata",
+    "FileEntry",
+    "SnapshotDiff",
+]
+
+```
+
+### 📄 `gencodedoc/models/config.py`
+
+```python
+"""Configuration models using Pydantic"""
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Literal, Optional
+from pathlib import Path
+
+class IgnoreConfig(BaseModel):
+    """File/directory ignore configuration"""
+    dirs: List[str] = Field(default_factory=lambda: [
+        'node_modules', 'venv', '.venv', 'env', '__pycache__',
+        '.git', 'dist', 'build', '.next', 'coverage'
+    ])
+    files: List[str] = Field(default_factory=lambda: [
+        '.DS_Store', 'Thumbs.db', 'package-lock.json', 'yarn.lock'
+    ])
+    extensions: List[str] = Field(default_factory=lambda: [
+        '.log', '.pyc', '.pyo', '.exe', '.bin',
+        '.jpg', '.png', '.gif', '.mp4', '.pdf', '.zip'
+    ])
+    patterns: List[str] = Field(default_factory=list)
+
+class TimerConfig(BaseModel):
+    """Timer-based autosave"""
+    interval: int = Field(default=300, description="Interval in seconds")
+
+class DiffThresholdConfig(BaseModel):
+    """Diff threshold autosave"""
+    threshold: float = Field(default=0.05, ge=0.0, le=1.0)
+    check_interval: int = Field(default=60)
+    ignore_whitespace: bool = True
+    ignore_comments: bool = False
+
+class HybridAutosaveConfig(BaseModel):
+    """Hybrid autosave (timer OR threshold)"""
+    min_interval: int = Field(default=180)
+    max_interval: int = Field(default=600)
+    threshold: float = Field(default=0.03, ge=0.0, le=1.0)
+
+class RetentionConfig(BaseModel):
+    """Snapshot retention policy"""
+    max_autosaves: int = Field(default=50, ge=1)
+    compress_after_days: int = Field(default=7, ge=0)
+    delete_after_days: int = Field(default=30, ge=0)
+    keep_manual: bool = True
+
+class AutosaveConfig(BaseModel):
+    """Autosave configuration"""
+    enabled: bool = False
+    mode: Literal['timer', 'diff', 'hybrid'] = 'hybrid'
+    timer: TimerConfig = Field(default_factory=TimerConfig)
+    diff_threshold: DiffThresholdConfig = Field(default_factory=DiffThresholdConfig)
+    hybrid: HybridAutosaveConfig = Field(default_factory=HybridAutosaveConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
+
+class DiffFormatConfig(BaseModel):
+    """Diff output format"""
+    default: Literal['unified', 'json', 'ast'] = 'unified'
+    unified_context: int = Field(default=3, ge=0)
+    json_include_content: bool = True
+    ast_enabled: bool = False
+
+class OutputConfig(BaseModel):
+    """Documentation output settings"""
+    default_name: str = "{project}_doc_{date}.md"
+    include_tree: bool = True
+    include_code: bool = True
+    tree_full_code_select: bool = False
+    language_detection: bool = True
+    max_file_size: int = Field(default=1_000_000, ge=0)
+
+class ProjectConfig(BaseModel):
+    """Main project configuration"""
+    model_config = ConfigDict(extra='allow')
+    
+    project_name: str = ""
+    project_path: Path
+
+    ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
+    autosave: AutosaveConfig = Field(default_factory=AutosaveConfig)
+    diff_format: DiffFormatConfig = Field(default_factory=DiffFormatConfig)
+    output: OutputConfig = Field(default_factory=OutputConfig)
+
+    storage_path: Path = Field(default=Path(".gencodedoc"))
+    compression_enabled: bool = True
+    compression_level: int = Field(default=3, ge=1, le=22)
+
+```
+
+### 📄 `gencodedoc/models/snapshot.py`
+
+```python
+"""Snapshot data models"""
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import fnmatch
+
+class FileEntry(BaseModel):
+    """Single file in a snapshot"""
+    path: str
+    hash: str
+    size: int
+    mode: int = 0o644
+
+class SnapshotMetadata(BaseModel):
+    """Snapshot metadata"""
+    id: Optional[int] = None
+    hash: str = ""
+    message: Optional[str] = None
+    tag: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    parent_id: Optional[int] = None
+    is_autosave: bool = False
+    trigger_type: str = 'manual'
+    files_count: int = 0
+    total_size: int = 0
+    compressed_size: int = 0
+
+class Snapshot(BaseModel):
+    """Complete snapshot"""
+    metadata: SnapshotMetadata
+    files: List[FileEntry] = Field(default_factory=list)
+
+    def get_file(self, path: str) -> Optional[FileEntry]:
+        """Get a specific file entry by path"""
+        for f in self.files:
+            if f.path == path:
+                return f
+        return None
+
+    def get_files_matching(self, patterns: List[str]) -> List[FileEntry]:
+        """Get files matching glob patterns or path prefixes"""
+        matched = []
+        for f in self.files:
+            for pattern in patterns:
+                if fnmatch.fnmatch(f.path, pattern) or f.path.startswith(pattern):
+                    matched.append(f)
+                    break
+        return matched
+
+class DiffEntry(BaseModel):
+    """Single file diff"""
+    file_path: str
+    status: str  # added, removed, modified, renamed
+    old_hash: Optional[str] = None
+    new_hash: Optional[str] = None
+    diff_content: Optional[str] = None
+    lines_added: int = 0
+    lines_removed: int = 0
+
+class SnapshotDiff(BaseModel):
+    """Diff between snapshots"""
+    from_snapshot: int = 0
+    to_snapshot: int = 0
+    files_added: List[str] = Field(default_factory=list)
+    files_removed: List[str] = Field(default_factory=list)
+    files_modified: List[DiffEntry] = Field(default_factory=list)
+    files_renamed: List[Dict[str, str]] = Field(default_factory=list)
+    total_changes: int = 0
+    significance_score: float = 0.0
+
+    def filter_by_paths(self, paths: List[str]) -> 'SnapshotDiff':
+        """Return a new SnapshotDiff filtered to only include specified paths"""
+        def matches(file_path: str) -> bool:
+            for pattern in paths:
+                if fnmatch.fnmatch(file_path, pattern):
+                    return True
+                if file_path.startswith(pattern):
+                    return True
+                if file_path == pattern:
+                    return True
+            return False
+
+        filtered = SnapshotDiff(
+            from_snapshot=self.from_snapshot,
+            to_snapshot=self.to_snapshot,
+            files_added=[p for p in self.files_added if matches(p)],
+            files_removed=[p for p in self.files_removed if matches(p)],
+            files_modified=[e for e in self.files_modified if matches(e.file_path)],
+            files_renamed=[r for r in self.files_renamed if matches(r.get('from', '')) or matches(r.get('to', ''))],
+        )
+        filtered.total_changes = (
+            len(filtered.files_added) +
+            len(filtered.files_removed) +
+            len(filtered.files_modified)
+        )
+        total = max(self.total_changes, 1)
+        filtered.significance_score = filtered.total_changes / total
+        return filtered
+
+
+```
+
+### 📄 `gencodedoc/storage/__init__.py`
+
+```python
+"""Storage layer for snapshots and metadata"""
+from .database import Database
+from .snapshot_store import SnapshotStore
+from .compression import Compressor
+
+__all__ = ["Database", "SnapshotStore", "Compressor"]
+
+```
+
+### 📄 `gencodedoc/storage/compression.py`
+
+```python
+"""Compression utilities using zstandard"""
+import zstandard as zstd
+from typing import Tuple
+
+class Compressor:
+    """File content compression"""
+
+    def __init__(self, level: int = 3):
+        """
+        Initialize compressor
+
+        Args:
+            level: Compression level (1-22, default 3)
+        """
+        self.level = max(1, min(22, level))
+        self._compressor = zstd.ZstdCompressor(level=self.level)
+        self._decompressor = zstd.ZstdDecompressor()
+
+    def compress(self, data: bytes) -> Tuple[bytes, int, int]:
+        """
+        Compress data
+
+        Returns:
+            (compressed_data, original_size, compressed_size)
+        """
+        original_size = len(data)
+        compressed = self._compressor.compress(data)
+        compressed_size = len(compressed)
+
+        return compressed, original_size, compressed_size
+
+    def decompress(self, data: bytes) -> bytes:
+        """Decompress data, fallback to original if not compressed"""
+        try:
+            return self._decompressor.decompress(data)
+        except zstd.ZstdError:
+            # Not compressed or invalid zstd data, return as is
+            return data
+
+
+    def compress_file(self, file_path: str) -> Tuple[bytes, int, int]:
+        """
+        Compress file content
+
+        Returns:
+            (compressed_data, original_size, compressed_size)
+        """
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        return self.compress(data)
+
+```
+
+### 📄 `gencodedoc/storage/database.py`
+
+```python
+"""SQLite database management"""
+import sqlite3
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from contextlib import contextmanager
+from datetime import datetime
+
+class Database:
+    """SQLite database for metadata"""
+
+    SCHEMA_VERSION = 1
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    @contextmanager
+    def connection(self):
+        """Context manager for connections"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def _init_db(self):
+        """Initialize database schema"""
+        with self.connection() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hash TEXT UNIQUE NOT NULL,
+                    message TEXT,
+                    tag TEXT UNIQUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    parent_id INTEGER,
+                    is_autosave BOOLEAN DEFAULT 0,
+                    trigger_type TEXT,
+                    files_count INTEGER,
+                    total_size INTEGER,
+                    compressed_size INTEGER,
+                    FOREIGN KEY (parent_id) REFERENCES snapshots(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS snapshot_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id INTEGER NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_hash TEXT NOT NULL,
+                    size INTEGER,
+                    mode INTEGER,
+                    FOREIGN KEY (snapshot_id) REFERENCES snapshots(id),
+                    UNIQUE(snapshot_id, file_path)
+                );
+
+                CREATE TABLE IF NOT EXISTS file_contents (
+                    hash TEXT PRIMARY KEY,
+                    content BLOB NOT NULL,
+                    original_size INTEGER,
+                    compressed_size INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS autosave_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    last_check TIMESTAMP,
+                    last_save TIMESTAMP,
+                    last_snapshot_id INTEGER,
+                    files_tracked INTEGER,
+                    FOREIGN KEY (last_snapshot_id) REFERENCES snapshots(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
+                CREATE INDEX IF NOT EXISTS idx_snapshots_tag ON snapshots(tag);
+                CREATE INDEX IF NOT EXISTS idx_snapshot_files_hash ON snapshot_files(file_hash);
+                CREATE INDEX IF NOT EXISTS idx_file_contents_hash ON file_contents(hash);
+            """)
+
+    # Snapshot CRUD
+    def create_snapshot(
+        self,
+        hash: str,
+        message: Optional[str] = None,
+        tag: Optional[str] = None,
+        is_autosave: bool = False,
+        trigger_type: str = 'manual',
+        parent_id: Optional[int] = None,
+        files_count: int = 0,
+        total_size: int = 0,
+        compressed_size: int = 0
+    ) -> int:
+        """Create new snapshot record"""
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                INSERT INTO snapshots
+                (hash, message, tag, is_autosave, trigger_type, parent_id,
+                 files_count, total_size, compressed_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (hash, message, tag, is_autosave, trigger_type, parent_id,
+                  files_count, total_size, compressed_size))
+            return cursor.lastrowid
+
+    def get_snapshot(self, snapshot_id: int) -> Optional[Dict[str, Any]]:
+        """Get snapshot by ID"""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM snapshots WHERE id = ?",
+                (snapshot_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_snapshot_by_tag(self, tag: str) -> Optional[Dict[str, Any]]:
+        """Get snapshot by tag"""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM snapshots WHERE tag = ?",
+                (tag,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def list_snapshots(
+        self,
+        limit: Optional[int] = None,
+        include_autosave: bool = True
+    ) -> List[Dict[str, Any]]:
+        """List snapshots"""
+        with self.connection() as conn:
+            query = "SELECT * FROM snapshots"
+            params = []
+
+            if not include_autosave:
+                query += " WHERE is_autosave = 0"
+
+            query += " ORDER BY created_at DESC"
+
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
+
+            cursor = conn.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_latest_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Get most recent snapshot"""
+        snapshots = self.list_snapshots(limit=1)
+        return snapshots[0] if snapshots else None
+
+    def delete_snapshot(self, snapshot_id: int) -> None:
+        """Delete snapshot and its files"""
+        with self.connection() as conn:
+            conn.execute("DELETE FROM snapshot_files WHERE snapshot_id = ?", (snapshot_id,))
+            conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
+
+    # Snapshot files
+    def add_file_to_snapshot(
+        self,
+        snapshot_id: int,
+        file_path: str,
+        file_hash: str,
+        size: int,
+        mode: int
+    ) -> None:
+        """Add file to snapshot"""
+        with self.connection() as conn:
+            conn.execute("""
+                INSERT INTO snapshot_files (snapshot_id, file_path, file_hash, size, mode)
+                VALUES (?, ?, ?, ?, ?)
+            """, (snapshot_id, file_path, file_hash, size, mode))
+
+    def get_snapshot_files(self, snapshot_id: int) -> List[Dict[str, Any]]:
+        """Get all files in snapshot"""
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM snapshot_files WHERE snapshot_id = ?
+            """, (snapshot_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # File contents (with deduplication)
+    def store_content(
+        self,
+        content_hash: str,
+        content: bytes,
+        original_size: int,
+        compressed_size: int
+    ) -> None:
+        """Store file content (deduplicated)"""
+        with self.connection() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO file_contents
+                (hash, content, original_size, compressed_size)
+                VALUES (?, ?, ?, ?)
+            """, (content_hash, content, original_size, compressed_size))
+
+    def get_content(self, content_hash: str) -> Optional[bytes]:
+        """Get file content by hash"""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "SELECT content FROM file_contents WHERE hash = ?",
+                (content_hash,)
+            )
+            row = cursor.fetchone()
+            return row['content'] if row else None
+
+    def content_exists(self, content_hash: str) -> bool:
+        """Check if content exists"""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM file_contents WHERE hash = ? LIMIT 1",
+                (content_hash,)
+            )
+            return cursor.fetchone() is not None
+
+    # Autosave state
+    def update_autosave_state(
+        self,
+        last_check: Optional[datetime] = None,
+        last_save: Optional[datetime] = None,
+        last_snapshot_id: Optional[int] = None,
+        files_tracked: Optional[int] = None
+    ) -> None:
+        """Update autosave state"""
+        with self.connection() as conn:
+            # Ensure row exists
+            conn.execute("""
+                INSERT OR IGNORE INTO autosave_state (id) VALUES (1)
+            """)
+
+            updates = []
+            params = []
+
+            if last_check:
+                updates.append("last_check = ?")
+                params.append(last_check)
+            if last_save:
+                updates.append("last_save = ?")
+                params.append(last_save)
+            if last_snapshot_id:
+                updates.append("last_snapshot_id = ?")
+                params.append(last_snapshot_id)
+            if files_tracked is not None:
+                updates.append("files_tracked = ?")
+                params.append(files_tracked)
+
+            if updates:
+                params.append(1)
+                conn.execute(
+                    f"UPDATE autosave_state SET {', '.join(updates)} WHERE id = ?",
+                    params
+                )
+
+    def get_autosave_state(self) -> Optional[Dict[str, Any]]:
+        """Get autosave state"""
+        with self.connection() as conn:
+            cursor = conn.execute("SELECT * FROM autosave_state WHERE id = 1")
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    # Cleanup
+    def cleanup_old_autosaves(self, max_keep: int = 50) -> int:
+        """Delete old autosaves beyond retention limit"""
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                SELECT id FROM snapshots
+                WHERE is_autosave = 1
+                ORDER BY created_at DESC
+                LIMIT -1 OFFSET ?
+            """, (max_keep,))
+
+            old_ids = [row['id'] for row in cursor.fetchall()]
+
+            for snapshot_id in old_ids:
+                self.delete_snapshot(snapshot_id)
+
+            return len(old_ids)
+
+    def cleanup_expired_autosaves(self, delete_after_days: int) -> int:
+        """Delete autosaves older than X days"""
+        if delete_after_days <= 0:
+            return 0
+            
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                SELECT id FROM snapshots
+                WHERE is_autosave = 1
+                AND created_at < datetime('now', ?)
+            """, (f'-{delete_after_days} days',))
+
+            old_ids = [row['id'] for row in cursor.fetchall()]
+
+            for snapshot_id in old_ids:
+                self.delete_snapshot(snapshot_id)
+
+            return len(old_ids)
+
+    def cleanup_orphaned_contents(self) -> int:
+        """Remove file_contents that are no longer referenced by any snapshot"""
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                DELETE FROM file_contents
+                WHERE hash NOT IN (
+                    SELECT DISTINCT file_hash FROM snapshot_files
+                )
+            """)
+            return cursor.rowcount
+
+```
+
+
+
+---
+**🚀 Suite dans la partie suivante...**
