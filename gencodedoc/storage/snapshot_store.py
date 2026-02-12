@@ -1,5 +1,6 @@
 """Snapshot storage management"""
 import hashlib
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -8,19 +9,16 @@ from .database import Database
 from .compression import Compressor
 from ..models.snapshot import Snapshot, SnapshotMetadata, FileEntry
 
+logger = logging.getLogger(__name__)
+
 
 class SnapshotStore:
     """Manages snapshot storage and retrieval"""
 
     def __init__(self, storage_path: Path, project_path: Path, compression_level: int = 3):
         self.storage_path = storage_path
-        self.project_path = project_path  # ✅ NOUVEAU
-        import sys
-        print(f"🔍 SnapshotStore DEBUG:", file=sys.stderr)
-        print(f"  - storage_path: {storage_path}", file=sys.stderr)
-        print(f"  - project_path: {project_path}", file=sys.stderr)
-        print(f"  - DB: {storage_path / 'gencodedoc.db'}", file=sys.stderr)
-        sys.stderr.flush()
+        self.project_path = project_path
+        logger.debug(f"SnapshotStore init: storage={storage_path}, project={project_path}")
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         self.db = Database(storage_path / "gencodedoc.db")
@@ -218,6 +216,43 @@ class SnapshotStore:
             target_path.chmod(file_entry.mode)
 
         return True
+
+    def get_file_content(self, file_hash: str) -> Optional[str]:
+        """
+        Get decompressed file content as string
+
+        Args:
+            file_hash: Hash of file content
+
+        Returns:
+            File content as string, or None if not found
+        """
+        content = self.db.get_content(file_hash)
+        if not content:
+            return None
+        try:
+            decompressed = self.compressor.decompress(content)
+            return decompressed.decode('utf-8')
+        except (UnicodeDecodeError, Exception):
+            return None
+
+    def get_file_content_bytes(self, file_hash: str) -> Optional[bytes]:
+        """
+        Get decompressed file content as bytes
+
+        Args:
+            file_hash: Hash of file content
+
+        Returns:
+            File content as bytes, or None if not found
+        """
+        content = self.db.get_content(file_hash)
+        if not content:
+            return None
+        try:
+            return self.compressor.decompress(content)
+        except Exception:
+            return None
 
     def delete_snapshot(self, snapshot_id: int) -> None:
         """Delete snapshot"""

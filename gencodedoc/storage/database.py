@@ -140,13 +140,18 @@ class Database:
         """List snapshots"""
         with self.connection() as conn:
             query = "SELECT * FROM snapshots"
+            params = []
+
             if not include_autosave:
                 query += " WHERE is_autosave = 0"
-            query += " ORDER BY created_at DESC"
-            if limit:
-                query += f" LIMIT {limit}"
 
-            cursor = conn.execute(query)
+            query += " ORDER BY created_at DESC"
+
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
+
+            cursor = conn.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
 
     def get_latest_snapshot(self) -> Optional[Dict[str, Any]]:
@@ -281,3 +286,14 @@ class Database:
                 self.delete_snapshot(snapshot_id)
 
             return len(old_ids)
+
+    def cleanup_orphaned_contents(self) -> int:
+        """Remove file_contents that are no longer referenced by any snapshot"""
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                DELETE FROM file_contents
+                WHERE hash NOT IN (
+                    SELECT DISTINCT file_hash FROM snapshot_files
+                )
+            """)
+            return cursor.rowcount

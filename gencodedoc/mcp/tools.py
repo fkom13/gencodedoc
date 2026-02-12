@@ -78,7 +78,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         },
         {
             "name": "restore_snapshot",
-            "description": "Restore a previous snapshot",
+            "description": "Restore a previous snapshot (full or partial via file_filters)",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -94,6 +94,11 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         "type": "boolean",
                         "description": "Overwrite existing files",
                         "default": False
+                    },
+                    "file_filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Glob patterns or paths to restore selectively (partial restore)"
                     }
                 },
                 "required": ["snapshot_ref"]
@@ -119,7 +124,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
         },
         {
             "name": "diff_versions",
-            "description": "Compare two versions",
+            "description": "Compare two versions, optionally filtered to specific files",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -141,6 +146,11 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         "enum": ["unified", "json"],
                         "description": "Diff output format",
                         "default": "unified"
+                    },
+                    "file_filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Glob patterns or paths to filter diff results"
                     }
                 },
                 "required": ["from_ref"]
@@ -385,6 +395,127 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {}
             }
+        },
+
+        # ═══════════════════════════════════════════════════════════
+        # FILE EXPLORATION & EXPORT (v2.1.0)
+        # ═══════════════════════════════════════════════════════════
+        {
+            "name": "get_file_at_version",
+            "description": "View the content of a specific file at a specific snapshot version",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    },
+                    "snapshot_ref": {
+                        "type": "string",
+                        "description": "Snapshot ID or tag"
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative path of the file in the snapshot"
+                    }
+                },
+                "required": ["snapshot_ref", "file_path"]
+            }
+        },
+        {
+            "name": "list_files_at_version",
+            "description": "List all files present in a specific snapshot version",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    },
+                    "snapshot_ref": {
+                        "type": "string",
+                        "description": "Snapshot ID or tag"
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "Optional glob pattern to filter files"
+                    }
+                },
+                "required": ["snapshot_ref"]
+            }
+        },
+        {
+            "name": "restore_files",
+            "description": "Restore specific files from a snapshot (partial restore)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    },
+                    "snapshot_ref": {
+                        "type": "string",
+                        "description": "Snapshot ID or tag"
+                    },
+                    "file_filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Glob patterns or paths to restore selectively"
+                    },
+                    "force": {
+                        "type": "boolean",
+                        "description": "Overwrite existing files",
+                        "default": True
+                    }
+                },
+                "required": ["snapshot_ref", "file_filters"]
+            }
+        },
+        {
+            "name": "export_snapshot",
+            "description": "Export a snapshot to a folder or .tar.gz archive",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    },
+                    "snapshot_ref": {
+                        "type": "string",
+                        "description": "Snapshot ID or tag to export"
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "description": "Target folder or archive path"
+                    },
+                    "archive": {
+                        "type": "boolean",
+                        "description": "Create a .tar.gz archive instead of folder",
+                        "default": False
+                    },
+                    "file_filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional glob patterns to filter files"
+                    }
+                },
+                "required": ["snapshot_ref", "output_path"]
+            }
+        },
+        {
+            "name": "cleanup_orphaned_contents",
+            "description": "Remove orphaned file contents no longer referenced by any snapshot",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    }
+                }
+            }
         }
     ]
 
@@ -536,20 +667,33 @@ Files (showing first 20):
         }
 
     elif tool_name == "restore_snapshot":
-        success = version_manager.restore_snapshot(
-            snapshot_ref=parameters["snapshot_ref"],
-            force=parameters.get("force", False)
-        )
+        try:
+            result = version_manager.restore_snapshot(
+                snapshot_ref=parameters["snapshot_ref"],
+                force=parameters.get("force", False),
+                file_filters=parameters.get("file_filters")
+            )
 
-        text = f"""{'✅ Snapshot restored successfully!' if success else '❌ Failed to restore snapshot'}
+            partial = " (partial)" if parameters.get("file_filters") else ""
+            text = f"""✅ Snapshot restored{partial}!
 
 📸 Snapshot: {parameters['snapshot_ref']}
+📁 Restored: {result['restored_count']}/{result['total_files']} files
 """
+            if result['skipped_count'] > 0:
+                text += f"⏭️  Skipped: {result['skipped_count']} files\n"
 
-        return {
-            "content": [{"type": "text", "text": text}],
-            "success": success
-        }
+            return {
+                "content": [{"type": "text", "text": text}],
+                "success": True,
+                **result
+            }
+        except ValueError as e:
+            return {
+                "content": [{"type": "text", "text": f"❌ {str(e)}"}],
+                "success": False,
+                "error": str(e)
+            }
 
     elif tool_name == "delete_snapshot":
         success = version_manager.delete_snapshot(parameters["snapshot_ref"])
@@ -569,7 +713,8 @@ Files (showing first 20):
 
         diff = version_manager.diff_snapshots(
             from_ref=parameters["from_ref"],
-            to_ref=parameters.get("to_ref", "current")
+            to_ref=parameters.get("to_ref", "current"),
+            file_filters=parameters.get("file_filters")
         )
 
         differ = DiffGenerator(config.diff_format, version_manager.store)
@@ -578,8 +723,12 @@ Files (showing first 20):
             format=parameters.get("format", "unified")
         )
 
-        text = f"""📊 Diff between {parameters['from_ref']} and {parameters.get('to_ref', 'current')}
+        filter_note = ""
+        if parameters.get("file_filters"):
+            filter_note = f"\n🔍 Filtered: {', '.join(parameters['file_filters'])}\n"
 
+        text = f"""📊 Diff between {parameters['from_ref']} and {parameters.get('to_ref', 'current')}
+{filter_note}
 📈 Changes: {diff.total_changes}
 📊 Significance: {diff.significance_score:.1%}
 
@@ -1030,6 +1179,131 @@ Extensions: {', '.join(config.ignore.extensions)}
             "content": [{"type": "text", "text": text}],
             "active_count": len(status_list),
             "projects": status_list
+        }
+
+    # ═══════════════════════════════════════════════════════════
+    # FILE EXPLORATION & EXPORT (v2.1.0)
+    # ═══════════════════════════════════════════════════════════
+
+    elif tool_name == "get_file_at_version":
+        try:
+            content = version_manager.get_file_content_at_version(
+                snapshot_ref=parameters["snapshot_ref"],
+                file_path=parameters["file_path"]
+            )
+
+            if content is None:
+                text = f"❌ Could not retrieve content for '{parameters['file_path']}'"
+                return {"content": [{"type": "text", "text": text}], "error": "content_not_found"}
+
+            text = f"""📄 {parameters['file_path']} @ snapshot {parameters['snapshot_ref']}
+{'─' * 60}
+{content}
+"""
+            return {
+                "content": [{"type": "text", "text": text}],
+                "file_path": parameters["file_path"],
+                "snapshot_ref": parameters["snapshot_ref"],
+                "size": len(content)
+            }
+        except ValueError as e:
+            return {"content": [{"type": "text", "text": f"❌ {str(e)}"}], "error": str(e)}
+
+    elif tool_name == "list_files_at_version":
+        try:
+            files = version_manager.list_files_at_version(
+                snapshot_ref=parameters["snapshot_ref"],
+                pattern=parameters.get("pattern")
+            )
+
+            text_lines = [f"📂 Files in snapshot {parameters['snapshot_ref']}"]
+            if parameters.get("pattern"):
+                text_lines.append(f"🔍 Filter: {parameters['pattern']}")
+            text_lines.append(f"📁 Total: {len(files)} files\n")
+
+            for f in files:
+                size_str = f"{f['size'] / 1024:.1f} KB" if f['size'] >= 1024 else f"{f['size']} B"
+                text_lines.append(f"  {f['path']}  ({size_str})")
+
+            return {
+                "content": [{"type": "text", "text": "\n".join(text_lines)}],
+                "files": files,
+                "count": len(files)
+            }
+        except ValueError as e:
+            return {"content": [{"type": "text", "text": f"❌ {str(e)}"}], "error": str(e)}
+
+    elif tool_name == "restore_files":
+        try:
+            result = version_manager.restore_snapshot(
+                snapshot_ref=parameters["snapshot_ref"],
+                force=parameters.get("force", True),
+                file_filters=parameters["file_filters"]
+            )
+
+            text = f"""✅ Partial restore complete!
+
+📸 Snapshot: {parameters['snapshot_ref']}
+🔍 Filters: {', '.join(parameters['file_filters'])}
+📁 Restored: {result['restored_count']}/{result['total_files']} files
+"""
+            if result['files_restored']:
+                text += "\nRestored files:\n"
+                for f in result['files_restored']:
+                    text += f"  ✅ {f}\n"
+
+            if result['files_skipped']:
+                text += "\nSkipped files:\n"
+                for f in result['files_skipped']:
+                    text += f"  ⏭️  {f}\n"
+
+            return {
+                "content": [{"type": "text", "text": text}],
+                "success": True,
+                **result
+            }
+        except ValueError as e:
+            return {"content": [{"type": "text", "text": f"❌ {str(e)}"}], "error": str(e)}
+
+    elif tool_name == "export_snapshot":
+        try:
+            result = version_manager.export_snapshot(
+                snapshot_ref=parameters["snapshot_ref"],
+                output_path=Path(parameters["output_path"]),
+                archive=parameters.get("archive", False),
+                file_filters=parameters.get("file_filters")
+            )
+
+            text = f"""✅ Snapshot exported!
+
+📸 Snapshot: {result['snapshot']}
+📦 Format: {result['format']}
+📂 Output: {result['output_path']}
+📁 Files: {result['exported_count']} exported
+"""
+            if result.get('archive_size'):
+                text += f"💾 Archive size: {result['archive_size'] / 1024:.1f} KB\n"
+
+            if result['failed_count'] > 0:
+                text += f"\n⚠️  {result['failed_count']} files failed to export\n"
+
+            return {
+                "content": [{"type": "text", "text": text}],
+                **result
+            }
+        except ValueError as e:
+            return {"content": [{"type": "text", "text": f"❌ {str(e)}"}], "error": str(e)}
+
+    elif tool_name == "cleanup_orphaned_contents":
+        count = version_manager.cleanup_orphaned_contents()
+
+        text = f"""🧹 Cleanup complete!
+
+🗑️  Removed {count} orphaned content(s) from the database.
+"""
+        return {
+            "content": [{"type": "text", "text": text}],
+            "removed_count": count
         }
 
     else:

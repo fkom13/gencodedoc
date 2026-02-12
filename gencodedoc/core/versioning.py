@@ -1,12 +1,17 @@
 """Version management and snapshot operations"""
+import tarfile
+import io
+import logging
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from ..models.config import ProjectConfig
 from ..models.snapshot import Snapshot, SnapshotDiff, DiffEntry
 from ..storage.snapshot_store import SnapshotStore
 from .scanner import FileScanner
+
+logger = logging.getLogger(__name__)
 
 
 class VersionManager:
@@ -20,7 +25,7 @@ class VersionManager:
         storage_path = config.project_path / config.storage_path
         self.store = SnapshotStore(
             storage_path=storage_path,
-            project_path=config.project_path,  # ✅ NOUVEAU
+            project_path=config.project_path,
             compression_level=config.compression_level
         )
 
@@ -101,35 +106,250 @@ class VersionManager:
             # Try as tag
             return self.store.get_snapshot_by_tag(snapshot_ref)
 
+    # ────────────────────────────────────────────
+    # File content viewing
+    # ────────────────────────────────────────────
+
+    def get_file_content_at_version(
+        self,
+        snapshot_ref: str,
+        file_path: str
+    ) -> Optional[str]:
+        """
+        Get the content of a specific file at a specific snapshot version
+
+        Args:
+            snapshot_ref: Snapshot ID or tag
+            file_path: Relative path of the file
+
+        Returns:
+            File content as string, or None if not found
+        """
+        snapshot = self.get_snapshot(snapshot_ref)
+        if not snapshot:
+            raise ValueError(f"Snapshot '{snapshot_ref}' not found")
+
+        file_entry = snapshot.get_file(file_path)
+        if not file_entry:
+            raise ValueError(f"File '{file_path}' not found in snapshot '{snapshot_ref}'")
+
+        content = self.store.get_file_content(file_entry.hash)
+        if content is None:
+            logger.warning(f"Content for hash {file_entry.hash} not found in store")
+        return content
+
+    def list_files_at_version(
+        self,
+        snapshot_ref: str,
+        pattern: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List all files present in a specific snapshot version
+
+        Args:
+            snapshot_ref: Snapshot ID or tag
+            pattern: Optional glob pattern to filter files
+
+        Returns:
+            List of file info dicts with path, size, hash
+        """
+        snapshot = self.get_snapshot(snapshot_ref)
+        if not snapshot:
+            raise ValueError(f"Snapshot '{snapshot_ref}' not found")
+
+        if pattern:
+            files = snapshot.get_files_matching([pattern])
+        else:
+            files = snapshot.files
+
+        return [
+            {
+                'path': f.path,
+                'size': f.size,
+                'hash': f.hash,
+                'mode': f.mode
+            }
+            for f in sorted(files, key=lambda x: x.path)
+        ]
+
+    # ────────────────────────────────────────────
+    # Restore operations
+    # ────────────────────────────────────────────
+
     def restore_snapshot(
         self,
         snapshot_ref: str,
         target_dir: Optional[Path] = None,
-        force: bool = False
-    ) -> bool:
+        force: bool = False,
+        file_filters: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """
-        Restore a snapshot
+        Restore a snapshot (full or partial)
 
         Args:
             snapshot_ref: Snapshot ID or tag
             target_dir: Where to restore (default: project root)
             force: Overwrite existing files
+            file_filters: Optional list of glob patterns/paths to restore selectively
 
         Returns:
-            True if successful
+            Dict with restore details: restored_count, skipped_count, files_restored
         """
         snapshot = self.get_snapshot(snapshot_ref)
         if not snapshot or not snapshot.metadata.id:
-            return False
+            raise ValueError(f"Snapshot '{snapshot_ref}' not found")
 
         if target_dir is None:
             target_dir = self.config.project_path
 
-        return self.store.restore_snapshot(
-            snapshot_id=snapshot.metadata.id,
-            target_dir=target_dir,
-            force=force
-        )
+        # Determine which files to restore
+        if file_filters:
+            files_to_restore = snapshot.get_files_matching(file_filters)
+        else:
+            files_to_restore = snapshot.files
+
+        restored = []
+        skipped = []
+
+        for file_entry in files_to_restore:
+            target_path = target_dir / file_entry.path
+
+            # Check if file exists
+            if target_path.exists() and not force:
+                skipped.append(file_entry.path)
+                continue
+
+            # Restore file
+            if self.store.restore_file(file_entry.hash, target_path):
+                target_path.chmod(file_entry.mode)
+                restored.append(file_entry.path)
+            else:
+                logger.warning(f"Failed to restore {file_entry.path}")
+                skipped.append(file_entry.path)
+
+        return {
+            'restored_count': len(restored),
+            'skipped_count': len(skipped),
+            'total_files': len(files_to_restore),
+            'files_restored': restored,
+            'files_skipped': skipped
+        }
+
+    # ────────────────────────────────────────────
+    # Export operations
+    # ────────────────────────────────────────────
+
+    def export_snapshot(
+        self,
+        snapshot_ref: str,
+        output_path: Path,
+        archive: bool = False,
+        file_filters: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Export a snapshot to a folder or tar.gz archive
+
+        Args:
+            snapshot_ref: Snapshot ID or tag
+            output_path: Target folder or archive path (.tar.gz)
+            archive: If True, create a .tar.gz archive
+            file_filters: Optional glob/path filters
+
+        Returns:
+            Dict with export details
+        """
+        snapshot = self.get_snapshot(snapshot_ref)
+        if not snapshot or not snapshot.metadata.id:
+            raise ValueError(f"Snapshot '{snapshot_ref}' not found")
+
+        # Determine which files to export
+        if file_filters:
+            files_to_export = snapshot.get_files_matching(file_filters)
+        else:
+            files_to_export = snapshot.files
+
+        if archive:
+            return self._export_as_archive(snapshot, files_to_export, output_path)
+        else:
+            return self._export_as_folder(snapshot, files_to_export, output_path)
+
+    def _export_as_folder(
+        self,
+        snapshot: Snapshot,
+        files: list,
+        output_path: Path
+    ) -> Dict[str, Any]:
+        """Export snapshot files to a folder"""
+        output_path.mkdir(parents=True, exist_ok=True)
+        exported = []
+        failed = []
+
+        for file_entry in files:
+            target = output_path / file_entry.path
+            content_bytes = self.store.get_file_content_bytes(file_entry.hash)
+
+            if content_bytes is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content_bytes)
+                target.chmod(file_entry.mode)
+                exported.append(file_entry.path)
+            else:
+                failed.append(file_entry.path)
+
+        tag = snapshot.metadata.tag or str(snapshot.metadata.id)
+        return {
+            'snapshot': tag,
+            'format': 'folder',
+            'output_path': str(output_path),
+            'exported_count': len(exported),
+            'failed_count': len(failed),
+            'files_exported': exported,
+            'files_failed': failed
+        }
+
+    def _export_as_archive(
+        self,
+        snapshot: Snapshot,
+        files: list,
+        output_path: Path
+    ) -> Dict[str, Any]:
+        """Export snapshot as tar.gz archive"""
+        output_path = Path(str(output_path))
+        if not str(output_path).endswith('.tar.gz'):
+            output_path = output_path.with_suffix('.tar.gz')
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        exported = []
+        failed = []
+
+        with tarfile.open(str(output_path), 'w:gz') as tar:
+            for file_entry in files:
+                content_bytes = self.store.get_file_content_bytes(file_entry.hash)
+
+                if content_bytes is not None:
+                    info = tarfile.TarInfo(name=file_entry.path)
+                    info.size = len(content_bytes)
+                    info.mode = file_entry.mode
+                    tar.addfile(info, io.BytesIO(content_bytes))
+                    exported.append(file_entry.path)
+                else:
+                    failed.append(file_entry.path)
+
+        tag = snapshot.metadata.tag or str(snapshot.metadata.id)
+        return {
+            'snapshot': tag,
+            'format': 'tar.gz',
+            'output_path': str(output_path),
+            'exported_count': len(exported),
+            'failed_count': len(failed),
+            'archive_size': output_path.stat().st_size if output_path.exists() else 0,
+            'files_exported': exported,
+            'files_failed': failed
+        }
+
+    # ────────────────────────────────────────────
+    # Diff & cleanup
+    # ────────────────────────────────────────────
 
     def delete_snapshot(self, snapshot_ref: str) -> bool:
         """Delete a snapshot"""
@@ -143,7 +363,8 @@ class VersionManager:
     def diff_snapshots(
         self,
         from_ref: str,
-        to_ref: str = "current"
+        to_ref: str = "current",
+        file_filters: Optional[List[str]] = None
     ) -> SnapshotDiff:
         """
         Compare two snapshots
@@ -151,6 +372,7 @@ class VersionManager:
         Args:
             from_ref: Source snapshot (ID or tag)
             to_ref: Target snapshot (ID, tag, or 'current')
+            file_filters: Optional list of glob patterns to filter diff results
 
         Returns:
             Diff between snapshots
@@ -216,8 +438,16 @@ class VersionManager:
         total_files = max(len(from_files), len(to_files), 1)
         diff.significance_score = diff.total_changes / total_files
 
+        # Apply file filters if provided
+        if file_filters:
+            diff = diff.filter_by_paths(file_filters)
+
         return diff
 
     def cleanup_old_autosaves(self, max_keep: int = 50) -> int:
         """Clean up old autosaves"""
         return self.store.cleanup_old_autosaves(max_keep)
+
+    def cleanup_orphaned_contents(self) -> int:
+        """Clean up orphaned file contents from the database"""
+        return self.store.db.cleanup_orphaned_contents()
