@@ -463,12 +463,16 @@ class VersionManager:
         
         Returns a list of entries with snapshot info and whether the file changed.
         """
+        # list_snapshots returns List[SnapshotMetadata] objects
         snapshots = self.store.list_snapshots(include_autosave=True)
         history = []
         prev_hash = None
 
+        # Sort snapshots by ID to ensure chronological order
+        snapshots.sort(key=lambda s: s.id)
+
         for snap in snapshots:
-            snapshot = self.store.get_snapshot(snap['id'])
+            snapshot = self.store.get_snapshot(snap.id)
             if not snapshot:
                 continue
 
@@ -479,10 +483,10 @@ class VersionManager:
                 first_seen = prev_hash is None
 
                 history.append({
-                    'snapshot_id': snap['id'],
-                    'tag': snap.get('tag', ''),
-                    'date': snap.get('created_at', ''),
-                    'message': snap.get('message', ''),
+                    'snapshot_id': snap.id,
+                    'tag': snap.tag or '',
+                    'date': snap.created_at.isoformat() if hasattr(snap.created_at, 'isoformat') else str(snap.created_at),
+                    'message': snap.message or '',
                     'hash': current_hash,
                     'size': file_entry.size,
                     'changed': changed,
@@ -493,10 +497,10 @@ class VersionManager:
                 if prev_hash is not None:
                     # File existed before but was removed in this snapshot
                     history.append({
-                        'snapshot_id': snap['id'],
-                        'tag': snap.get('tag', ''),
-                        'date': snap.get('created_at', ''),
-                        'message': snap.get('message', ''),
+                        'snapshot_id': snap.id,
+                        'tag': snap.tag or '',
+                        'date': snap.created_at.isoformat() if hasattr(snap.created_at, 'isoformat') else str(snap.created_at),
+                        'message': snap.message or '',
                         'hash': None,
                         'size': 0,
                         'changed': True,
@@ -527,15 +531,18 @@ class VersionManager:
         search_query = query if case_sensitive else query.lower()
 
         if snapshot_ref:
-            snap_id = self.store.resolve_snapshot_ref(snapshot_ref)
-            snapshots_to_search = [{'id': snap_id}]
+            # Resolve single snapshot
+            snap = self.get_snapshot(snapshot_ref)
+            if not snap:
+                return []
+            snapshots_to_search = [snap.metadata]
         else:
             snapshots_to_search = self.store.list_snapshots(include_autosave=False)
 
         seen_hashes = set()  # Avoid searching same content twice
 
-        for snap_info in snapshots_to_search:
-            snapshot = self.store.get_snapshot(snap_info['id'])
+        for snap_meta in snapshots_to_search:
+            snapshot = self.store.get_snapshot(snap_meta.id)
             if not snapshot:
                 continue
 
@@ -550,6 +557,7 @@ class VersionManager:
                 seen_hashes.add(file_entry.hash)
 
                 try:
+                    # Get content directly
                     compressed = self.store.db.get_content(file_entry.hash)
                     if not compressed:
                         continue
@@ -567,8 +575,8 @@ class VersionManager:
                                     break
 
                         results.append({
-                            'snapshot_id': snap_info['id'],
-                            'tag': snap_info.get('tag', ''),
+                            'snapshot_id': snap_meta.id,
+                            'tag': snap_meta.tag or '',
                             'file_path': file_entry.path,
                             'matches': matches,
                             'total_matches': sum(
@@ -599,23 +607,20 @@ class VersionManager:
         diff = self.diff_snapshots(from_ref, to_ref or 'current')
 
         # Get snapshot info for header
-        from_id = self.store.resolve_snapshot_ref(from_ref)
-        from_snap_info = next(
-            (s for s in self.store.list_snapshots() if s['id'] == from_id), {}
-        )
-
+        from_snap = self.get_snapshot(from_ref)
+        from_meta = from_snap.metadata if from_snap else None
+        
         if to_ref and to_ref != 'current':
-            to_id = self.store.resolve_snapshot_ref(to_ref)
-            to_snap_info = next(
-                (s for s in self.store.list_snapshots() if s['id'] == to_id), {}
-            )
-            to_label = to_snap_info.get('tag', f"#{to_id}")
-            to_date = to_snap_info.get('created_at', '')
+            to_snap = self.get_snapshot(to_ref)
+            to_meta = to_snap.metadata if to_snap else None
+            
+            to_label = to_meta.tag if to_meta and to_meta.tag else f"Snapshot #{to_meta.id if to_meta else '?'}"
+            to_date = to_meta.created_at.strftime("%Y-%m-%d") if to_meta else ""
         else:
             to_label = "current"
             to_date = datetime.now().strftime("%Y-%m-%d")
 
-        from_label = from_snap_info.get('tag', f"#{from_id}")
+        from_label = from_meta.tag if from_meta and from_meta.tag else f"Snapshot #{from_meta.id if from_meta else from_ref}"
 
         lines = []
         lines.append(f"## [{to_label}] - {to_date}")

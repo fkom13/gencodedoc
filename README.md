@@ -151,23 +151,22 @@ GenCodeDoc offre une CLI complète et une API MCP/REST riche.
 -   `gencodedoc config show|edit|set|preset|ignore` : Gère la configuration.
 -   `gencodedoc status` : Affiche l'état actuel du projet.
 -   `gencodedoc snapshot cleanup` : Nettoyage et maintenance.
+-   `gencodedoc tree` : Visualisation de l'arborescence du projet (avec pagination/filtres).
 
-#### Nouveautés CLI v2.1 🚀
-- **Presets Configurables (YAML)** : Les presets (`python`, `node`, `web`, `go`) sont maintenant définis dans des fichiers YAML modifiables (`config/presets/`).
-- **Compression & Rétention** : Support de la compression `zstandard` (configurable) et nettoyage automatique des vieux snapshots (retention policy).
-- **Mode Debug** : Activez les logs détaillés via `export GENCODEDOC_DEBUG=1`.
-- `gencodedoc snapshot cat <ref> <file>` : Affiche le contenu d'un fichier d'une version donnée.
-- `gencodedoc snapshot files <ref>` : Liste les fichiers d'un snapshot (avec filtres).
-- `gencodedoc snapshot export <ref>` : Exporte un snapshot vers un dossier ou une archive `.tar.gz`.
-- `gencodedoc snapshot restore ... --filter` : Restauration partielle de fichiers.
+#### Nouveautés v2.3 🚀
+- **Visualisation Arborescence** : Nouvelle commande `gencodedoc tree` (alias `viz`) pour explorer la structure du projet avec pagination et filtres.
+- **Historique de Fichiers** : Suivez l'évolution d'un fichier spécifique à travers tous les snapshots (`get_file_history`).
+- **Recherche dans les Snapshots** : Cherchez du texte dans le contenu de tous les snapshots archivés (`search_snapshots`).
+- **Générateur de Changelog** : Créez automatiquement des release notes au format Keep-a-Changelog entre deux versions (`generate_changelog`).
+- **Optimisations** : Scanning par générateur (perf++) et déduplication des ignores.
 
-
-### Outils MCP (22 outils)
+### Outils MCP (26 outils)
 
 Un résumé des outils disponibles pour les IA :
 
--   **Gestion des Snapshots (11 outils)** : `create_snapshot`, `list_snapshots`, `get_snapshot_details`, `restore_snapshot` (supporte partiel), `restore_files`, `delete_snapshot`, `diff_versions`, `get_file_at_version`, `list_files_at_version`, `export_snapshot`, `cleanup_orphaned_contents`.
--   **Documentation (3 outils)** : `generate_documentation`, `preview_structure`, `get_project_stats`.
+-   **Gestion des Snapshots (11 outils)** : `create_snapshot`, `list_snapshots`, `get_snapshot_details`, `restore_snapshot`, `restore_files`, `delete_snapshot`, `diff_versions`, `get_file_at_version`, `list_files_at_version`, `export_snapshot`, `cleanup_orphaned_contents`.
+-   **Code Intelligence (3 outils)** : `get_file_history`, `search_snapshots`, `generate_changelog`.
+-   **Documentation (3 outils)** : `generate_documentation`, `preview_structure` (amélioré), `get_project_stats`.
 -   **Gestion de Projet (2 outils)** : `init_project`, `get_project_status`.
 -   **Configuration (3 outils)** : `get_config`, `set_config_value`, `apply_preset`, `manage_ignore_rules`.
 -   **Autosave (3 outils)** : `start_autosave`, `stop_autosave`, `get_autosave_status`.
