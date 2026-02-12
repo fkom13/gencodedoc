@@ -12,7 +12,7 @@
 
 *Intelligent versioning and documentation for modern development workflows*
 
-[Quick Start](#-quick-start) • [Features](#-features) • [MCP Tools](#-mcp-tools-17-tools) • [Documentation](#-documentation)
+[Quick Start](#-quick-start) • [Features](#-features) • [MCP Tools](#-mcp-tools-26-tools) • [Documentation](#-documentation)
 
 </div>
 
@@ -29,28 +29,29 @@ poetry install
 poetry run gencodedoc init --preset python
 
 # 3. Create your first snapshot
-poetry run gencodedoc snapshot create --message "Initial version" --tag v1.0
+poetry run gencodedoc snapshot create -m "Initial version" -t v1.0
 
-# 4. Generate documentation
-poetry run gencodedoc doc generate
+# 4. Generate documentation (Smart Split)
+poetry run gencodedoc doc generate --limit 5000
 
-# 5. Start autosave (optional)
-poetry run gencodedoc config set autosave.enabled true
+# 5. Visualize Tree
+poetry run gencodedoc tree
+```
 🎯 For AI Assistants (Claude/Gemini): See MCP Integration
 
 ✨ Features
 🎯 Core Features
 📸 Smart Snapshots - Create intelligent snapshots with ~70% space savings via SHA256 deduplication
 🔄 Intelligent Autosave - 3 modes (timer/diff/hybrid) with configurable thresholds
-📝 Beautiful Documentation - Generate Markdown docs with syntax highlighting and directory trees
+📝 Beautiful Documentation - Generate Markdown docs with syntax highlighting, directory trees, and **smart splitting**
 🔍 Advanced Diff - Compare versions with unified, JSON, or AST-based diffs
 🗜️ Efficient Storage - zstd compression (~3x reduction) + SQLite with optimized indexes
 🎨 Project Presets - Pre-configured for Python, Node.js, Go, and Web projects
 🔌 MCP Integration (Model Context Protocol)
-22 MCP Tools - Full CLI functionality exposed via MCP
+**26 MCP Tools** - Full CLI functionality exposed via MCP for AI Assistants
 3 Transports - stdio (Gemini CLI) + SSE (Claude Desktop) + REST API
 Multi-Project - Manage multiple projects simultaneously
-Autosave Control - Start/stop/monitor autosave via MCP
+Code Intelligence - File history, search, and changelog generation
 Live Status - Real-time project statistics and snapshot management
 📦 Installation
 Prerequisites
@@ -236,69 +237,93 @@ Bash
 
 # Start REST server
 poetry run python -m gencodedoc.mcp.server
-
 # Available endpoints
 GET  http://127.0.0.1:8000/           # Server info
 GET  http://127.0.0.1:8000/mcp/tools  # List tools
 POST http://127.0.0.1:8000/mcp/execute # Execute tool
-🛠️ MCP Tools (22 Tools)
-📸 Snapshot Management (11 tools)
-Tool	Description	Key Parameters
-create_snapshot	Create a new snapshot	message, tag, include_paths
-list_snapshots	List all snapshots	limit, include_autosave
-get_snapshot_details	Get full snapshot info	snapshot_ref
-restore_snapshot	Restore a snapshot (full or partial)	snapshot_ref, force, file_filters
-restore_files	Restore specific files	snapshot_ref, file_filters
-delete_snapshot	Delete a snapshot	snapshot_ref
-diff_versions	Compare two versions	from_ref, to_ref, format, file_filters
-get_file_at_version	Get content of a single file	snapshot_ref, file_path
-list_files_at_version	List files in a snapshot	snapshot_ref, pattern
-export_snapshot	Export snapshot to folder/archive	snapshot_ref, output_path, archive
-cleanup_orphaned_contents	Cleanup unused data	none
-📝 Documentation (3 tools)
-Tool	Description	Key Parameters
-generate_documentation	Generate Markdown docs	output_path, include_tree, include_code
-preview_structure	Show directory tree	max_depth
-get_project_stats	Get project statistics	none
-🎯 Project Management (2 tools)
-Tool	Description	Key Parameters
-init_project	Initialize gencodedoc	project_path, preset
-get_project_status	Get project status	project_path
-⚙️ Configuration (3 tools)
-Tool	Description	Key Parameters
-get_config	View configuration	project_path
-set_config_value	Modify config value	key, value
-apply_preset	Apply preset config	preset (python/nodejs/go/web)
-manage_ignore_rules	Manage ignore rules	add_dir, add_file, add_ext, list_all
-🔄 Autosave (3 tools)
-Tool	Description	Key Parameters
-start_autosave	Start automatic versioning	project_path, mode
-stop_autosave	Stop automatic versioning	project_path
-get_autosave_status	Get status of all autosaves	none
-💬 Usage Examples with AI
-Once configured, ask your AI assistant:
+🛠️ MCP Tools (26 Tools)
 
-text
+ 🧠 Code Intelligence (3 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `get_file_history` | Track file changes across versions | `file_path` |
+ | `search_snapshots` | Search text in all snapshots | `query`, `case_sensitive`, `file_filter` |
+ | `generate_changelog` | Generate Keep-a-Changelog | `from_ref`, `to_ref` |
 
-🤖 "Create a snapshot of the project with tag v2.0"
-→ Calls: create_snapshot(tag="v2.0", message="...")
+ 📸 Snapshot Management (11 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `create_snapshot` | Create a new snapshot | `message`, `tag`, `include_paths` |
+ | `list_snapshots` | List all snapshots | `limit`, `include_autosave` |
+ | `get_snapshot_details` | Get full snapshot info | `snapshot_ref` |
+ | `restore_snapshot` | Restore a snapshot (full or partial) | `snapshot_ref`, `force`, `file_filters` |
+ | `restore_files` | Restore specific files | `snapshot_ref`, `file_filters` |
+ | `delete_snapshot` | Delete a snapshot | `snapshot_ref` |
+ | `diff_versions` | Compare two versions | `from_ref`, `to_ref`, `format`, `file_filters` |
+ | `get_file_at_version` | Get content of a single file | `snapshot_ref`, `file_path` |
+ | `list_files_at_version` | List files in a snapshot | `snapshot_ref`, `pattern` |
+ | `export_snapshot` | Export snapshot to folder/archive | `snapshot_ref`, `output_path`, `archive` |
+ | `cleanup_orphaned_contents` | Cleanup unused data | none |
 
-🤖 "Show me the last 5 snapshots"
-→ Calls: list_snapshots(limit=5)
+ 📝 Documentation (3 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `generate_documentation` | Generate Markdown docs | `output_path`, `split_limit`, `ignore_tree_patterns` |
+ | `preview_structure` | Show directory tree | `max_depth`, `ignore_add`, `limit`, `page` |
+ | `get_project_stats` | Get project statistics | none |
 
-🤖 "Compare version v1.0 with current state"
-→ Calls: diff_versions(from_ref="v1.0", to_ref="current")
+ 🎯 Project Management (2 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `init_project` | Initialize gencodedoc | `project_path`, `preset` |
+ | `get_project_status` | Get project status | `project_path` |
 
-🤖 "Generate complete project documentation"
-→ Calls: generate_documentation()
+ ⚙️ Configuration (4 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `get_config` | View configuration | `project_path` |
+ | `set_config_value` | Modify config value | `key`, `value` |
+ | `apply_preset` | Apply preset config | `preset` (python/nodejs/go/web) |
+ | `manage_ignore_rules` | Manage ignore rules | `add_dir`, `add_file`, `add_ext`, `list_all` |
 
-🤖 "What are the project statistics?"
-→ Calls: get_project_stats()
+ 🔄 Autosave (3 tools)
+ | Tool | Description | Key Parameters |
+ |------|-------------|----------------|
+ | `start_autosave` | Start automatic versioning | `project_path`, `mode` |
+ | `stop_autosave` | Stop automatic versioning | `project_path` |
+ | `get_autosave_status` | Get status of all autosaves | none |
 
-🤖 "Initialize a new Python project in /path/to/project"
-→ Calls: init_project(project_path="/path/to/project", preset="python")
+ ---
 
-🤖 "Start autosave in hybrid mode for this project"
+ 🤝 Contributing
+ Contributions welcome! 🎉
+
+ 🐛 Report bugs via GitHub Issues
+ 💡 Suggest features via Discussions
+ 🔧 Submit Pull Requests
+
+ Development workflow:
+ 1. Fork the repo
+ 2. Create a feature branch (`git checkout -b feature/amazing`)
+ 3. Make your changes
+ 4. Run tests (`make test`)
+ 5. Submit PR
+
+ 📄 License
+ MIT License - See LICENSE file
+
+ 🐛 Issues: GitHub Issues
+ 💬 Discussions: GitHub Discussions
+ 🌐 Website: esprit-artificiel.com
+ 📧 Email: support@esprit-artificiel.com
+
+ <div align="center">
+ Made with ❤️ for developers who love smart versioning and beautiful docs
+
+ 💡 Pro Tip: Use GenCodeDoc with Gemini CLI or Claude Desktop for AI-powered version control!
+
+ ⭐ Star this repo if you find it useful!
+ </div>🤖 "Start autosave in hybrid mode for this project"
 → Calls: start_autosave(project_path="...", mode="hybrid")
 
 🤖 "Stop all autosaves and show me their status"
