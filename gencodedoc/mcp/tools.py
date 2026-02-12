@@ -188,6 +188,15 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                         "type": "boolean",
                         "description": "Include file code",
                         "default": True
+                    },
+                    "split_limit": {
+                        "type": "integer",
+                        "description": "Split output into multiple files if line count exceeds this limit"
+                    },
+                    "ignore_tree_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Patterns to exclude from the directory tree view (e.g. ['*.jpg', 'node_modules'])"
                     }
                 }
             }
@@ -837,22 +846,27 @@ Files (showing first 20):
     # ═══════════════════════════════════════════════════════════
 
     elif tool_name == "generate_documentation":
-        output_path = doc_generator.generate(
+        output_paths = doc_generator.generate(
             output_path=Path(parameters["output_path"]) if parameters.get("output_path") else None,
             include_paths=parameters.get("include_paths"),
             include_tree=parameters.get("include_tree", True),
-            include_code=parameters.get("include_code", True)
+            include_code=parameters.get("include_code", True),
+            split_limit=parameters.get("split_limit"),
+            ignore_tree_patterns=parameters.get("ignore_tree_patterns")
         )
+
+        file_list = "\n".join(f"- {p.name} ({p.stat().st_size / 1024:.1f} KB)" for p in output_paths)
 
         text = f"""✅ Documentation generated successfully!
 
-📄 Output: {output_path}
-💾 Size: {output_path.stat().st_size / 1024:.1f} KB
+📁 Output files:
+{file_list}
 """
 
         return {
             "content": [{"type": "text", "text": text}],
-            "output_path": str(output_path)
+            "output_paths": [str(p) for p in output_paths],
+            "files_count": len(output_paths)
         }
 
     elif tool_name == "preview_structure":

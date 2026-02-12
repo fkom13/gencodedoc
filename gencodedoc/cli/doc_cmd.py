@@ -16,7 +16,9 @@ def generate_doc(
     tree: bool = typer.Option(True, "--tree/--no-tree", help="Include directory tree"),
     code: bool = typer.Option(True, "--code/--no-code", help="Include file code"),
     tree_full: bool = typer.Option(False, "--tree-full/--no-tree-full", help="Full tree, selected code only"),
-    path: Optional[str] = typer.Option(None, help="Project path (default: current directory)")
+    path: Optional[str] = typer.Option(None, help="Project path (default: current directory)"),
+    split_limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Split output into files of N lines"),
+    ignore_tree: Optional[List[str]] = typer.Option(None, "--ignore-tree", "-i", help="Patterns to ignore in tree view")
 ):
     """Generate project documentation"""
     from ..core.config import ConfigManager
@@ -29,19 +31,21 @@ def generate_doc(
     doc_gen = DocumentationGenerator(config)
 
     with console.status("[bold blue]Generating documentation..."):
-        output_path = doc_gen.generate(
+        output_paths = doc_gen.generate(
             output_path=output,
             include_paths=include,
             exclude_paths=exclude,
             include_tree=tree,
             include_code=code,
-            tree_full_code_select=tree_full
+            tree_full_code_select=tree_full,
+            split_limit=split_limit,
+            ignore_tree_patterns=ignore_tree
         )
 
-    file_size = output_path.stat().st_size / 1024
     console.print(f"[green]✅ Documentation generated![/green]")
-    console.print(f"   Output: {output_path}")
-    console.print(f"   Size: {file_size:.1f} KB")
+    for path in output_paths:
+        file_size = path.stat().st_size / 1024
+        console.print(f"   📄 {path.name} ({file_size:.1f} KB)")
 
 
 @app.command("preview")

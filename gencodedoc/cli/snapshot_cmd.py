@@ -12,10 +12,10 @@ console = Console()
 
 @app.command("create")
 def create_snapshot(
-    message: Optional[str] = typer.Option(None, help="Snapshot message"),
-    tag: Optional[str] = typer.Option(None, help="Tag for easy reference"),
-    include: Optional[List[str]] = typer.Option(None, help="Paths to include"),
-    exclude: Optional[List[str]] = typer.Option(None, help="Paths to exclude"),
+    message: Optional[str] = typer.Option(None, "--message", "-m", help="Snapshot message"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Tag for easy reference"),
+    include: Optional[List[str]] = typer.Option(None, "--include", "-i", help="Paths to include"),
+    exclude: Optional[List[str]] = typer.Option(None, "--exclude", "-x", help="Paths to exclude"),
     path: Optional[str] = typer.Option(None, help="Project path (default: current directory)")
 ):
     """Create a new snapshot"""

@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "gencodedoc"
-version = "2.1.0"
+version = "2.4.0"
 description = "Smart documentation generator and intelligent versioning system with MCP support"
-authors = ["fkom13 <fkom@esprit-artificiel.com>"]
+authors = ["fkom13 <fkom13@esprit-artificiel.com>"]
 readme = "README.md"
 license = "MIT"
 homepage = "https://github.com/fkom13/gencodedoc"
@@ -20,16 +20,12 @@ python = "^3.10"
 typer = {extras = ["all"], version = "^0.20.0"}
 rich = "^13.7.0"
 pydantic = "^2.5.0"
-pydantic-settings = "^2.1.0"
 pyyaml = "^6.0.1"
 pathspec = "^0.11.2"
 zstandard = "^0.22.0"
 watchdog = "^3.0.0"
 fastapi = "^0.121.0"
 uvicorn = "^0.38.0"
-python-multipart = "^0.0.6"
-httpx = "^0.25.2"
-aiofiles = "^23.2.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
