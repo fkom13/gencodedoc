@@ -50,6 +50,13 @@ class ConfigManager:
         target_path = self.global_config_path if global_config else self.config_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Deduplicate ignore lists (preserves order)
+        if config.ignore:
+            config.ignore.dirs = list(dict.fromkeys(config.ignore.dirs))
+            config.ignore.files = list(dict.fromkeys(config.ignore.files))
+            config.ignore.extensions = list(dict.fromkeys(config.ignore.extensions))
+            config.ignore.patterns = list(dict.fromkeys(config.ignore.patterns))
+
         config_dict = config.model_dump(
             exclude={'project_path'},
             exclude_none=True,

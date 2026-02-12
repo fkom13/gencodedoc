@@ -24,7 +24,7 @@ class FileScanner:
         if include_paths:
             files = self._scan_specific_paths(include_paths)
         else:
-            files = self.filter.scan_directory(self.config.project_path)
+            files = list(self.filter.scan_directory(self.config.project_path))
 
         if exclude_paths:
             exclude_set = {self.config.project_path / p for p in exclude_paths}
@@ -49,7 +49,7 @@ class FileScanner:
                 if not self.filter.should_ignore(path, False):
                     files.append(path)
             elif path.is_dir():
-                files.extend(self.filter.scan_directory(path))
+                files.extend(list(self.filter.scan_directory(path)))
 
         return files
 

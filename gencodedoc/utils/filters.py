@@ -58,23 +58,19 @@ class FileFilter:
             if not self.should_ignore(p, p.is_dir())
         ]
 
-    def scan_directory(self, directory: Path, recursive: bool = True) -> List[Path]:
-        """Scan directory and return filtered file list"""
-        files = []
-
+    def scan_directory(self, directory: Path, recursive: bool = True):
+        """Scan directory and yield filtered files (generator)"""
         try:
             for item in directory.iterdir():
                 if self.should_ignore(item, item.is_dir()):
                     continue
 
                 if item.is_file():
-                    files.append(item)
+                    yield item
                 elif item.is_dir() and recursive:
-                    files.extend(self.scan_directory(item, recursive))
+                    yield from self.scan_directory(item, recursive)
         except PermissionError:
             pass
-
-        return files
 
 
 class BinaryDetector:

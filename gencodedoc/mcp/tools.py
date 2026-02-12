@@ -237,6 +237,81 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                 }
             }
         },
+        # ═══════════════════════════════════════════════════════════
+        # CODE INTELLIGENCE
+        # ═══════════════════════════════════════════════════════════
+        {
+            "name": "get_file_history",
+            "description": "Track the history of a specific file across all snapshots",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative path of the file to track"
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    }
+                },
+                "required": ["file_path"]
+            }
+        },
+        {
+            "name": "search_snapshots",
+            "description": "Search for text content across snapshots",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Text to search for"
+                    },
+                    "file_filter": {
+                        "type": "string",
+                        "description": "Glob pattern to filter files (e.g. '*.py')"
+                    },
+                    "snapshot_ref": {
+                        "type": "string",
+                        "description": "Search in specific snapshot only"
+                    },
+                    "case_sensitive": {
+                        "type": "boolean",
+                        "description": "Case-sensitive search",
+                        "default": False
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "generate_changelog",
+            "description": "Generate a Keep-a-Changelog formatted changelog between two snapshots",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "from_ref": {
+                        "type": "string",
+                        "description": "Source snapshot ID or tag"
+                    },
+                    "to_ref": {
+                        "type": "string",
+                        "description": "Target snapshot ID, tag, or 'current'",
+                        "default": "current"
+                    },
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (optional)"
+                    }
+                },
+                "required": ["from_ref"]
+            }
+        },
 
         # ═══════════════════════════════════════════════════════════
         # PROJECT MANAGEMENT
@@ -857,6 +932,82 @@ Files (showing first 20):
             "total_files": len(files),
             "total_size": total_size,
             "extensions": dict(extensions.most_common(10))
+        }
+
+    # ═══════════════════════════════════════════════════════════
+    # CODE INTELLIGENCE
+    # ═══════════════════════════════════════════════════════════
+
+    elif tool_name == "get_file_history":
+        history = version_manager.get_file_history(parameters["file_path"])
+
+        if not history:
+            text = f"📄 No history found for `{parameters['file_path']}`"
+        else:
+            lines = [f"📄 File History: `{parameters['file_path']}`\n"]
+            lines.append(f"📸 Found in {len(history)} snapshot(s)\n")
+
+            for entry in history:
+                tag_str = f" ({entry['tag']})" if entry.get('tag') else ""
+                status = ""
+                if entry.get('removed'):
+                    status = "🗑️  REMOVED"
+                elif entry.get('first_seen'):
+                    status = "✨ FIRST SEEN"
+                elif entry.get('changed'):
+                    status = "✏️  CHANGED"
+                else:
+                    status = "━  unchanged"
+
+                size_str = f" ({entry['size']}B)" if entry.get('size') else ""
+                lines.append(f"  [{entry['snapshot_id']}]{tag_str} {entry['date'][:10]} {status}{size_str}")
+                if entry.get('message'):
+                    lines.append(f"      📝 {entry['message']}")
+
+            text = "\n".join(lines)
+
+        return {
+            "content": [{"type": "text", "text": text}],
+            "history": history
+        }
+
+    elif tool_name == "search_snapshots":
+        results = version_manager.search_in_snapshots(
+            query=parameters["query"],
+            file_filter=parameters.get("file_filter"),
+            snapshot_ref=parameters.get("snapshot_ref"),
+            case_sensitive=parameters.get("case_sensitive", False)
+        )
+
+        if not results:
+            text = f"🔍 No results for \"{parameters['query']}\""
+        else:
+            lines = [f"🔍 Search: \"{parameters['query']}\""]
+            lines.append(f"📊 {len(results)} file(s) matched\n")
+
+            for r in results:
+                tag_str = f" ({r['tag']})" if r.get('tag') else ""
+                lines.append(f"📄 [{r['snapshot_id']}]{tag_str} `{r['file_path']}` ({r['total_matches']} matches)")
+                for m in r['matches']:
+                    lines.append(f"   L{m['line']}: {m['content'][:120]}")
+                lines.append("")
+
+            text = "\n".join(lines)
+
+        return {
+            "content": [{"type": "text", "text": text}],
+            "results": results
+        }
+
+    elif tool_name == "generate_changelog":
+        changelog = version_manager.generate_changelog(
+            from_ref=parameters["from_ref"],
+            to_ref=parameters.get("to_ref")
+        )
+
+        return {
+            "content": [{"type": "text", "text": changelog}],
+            "changelog": changelog
         }
 
     # ═══════════════════════════════════════════════════════════

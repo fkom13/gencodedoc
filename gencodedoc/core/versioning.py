@@ -456,3 +456,193 @@ class VersionManager:
     def cleanup_orphaned_contents(self) -> int:
         """Clean up orphaned file contents from the database"""
         return self.store.db.cleanup_orphaned_contents()
+
+    def get_file_history(self, file_path: str) -> List[Dict[str, Any]]:
+        """
+        Get the history of a specific file across all snapshots.
+        
+        Returns a list of entries with snapshot info and whether the file changed.
+        """
+        snapshots = self.store.list_snapshots(include_autosave=True)
+        history = []
+        prev_hash = None
+
+        for snap in snapshots:
+            snapshot = self.store.get_snapshot(snap['id'])
+            if not snapshot:
+                continue
+
+            file_entry = snapshot.get_file(file_path)
+            if file_entry:
+                current_hash = file_entry.hash
+                changed = prev_hash is not None and current_hash != prev_hash
+                first_seen = prev_hash is None
+
+                history.append({
+                    'snapshot_id': snap['id'],
+                    'tag': snap.get('tag', ''),
+                    'date': snap.get('created_at', ''),
+                    'message': snap.get('message', ''),
+                    'hash': current_hash,
+                    'size': file_entry.size,
+                    'changed': changed,
+                    'first_seen': first_seen
+                })
+                prev_hash = current_hash
+            else:
+                if prev_hash is not None:
+                    # File existed before but was removed in this snapshot
+                    history.append({
+                        'snapshot_id': snap['id'],
+                        'tag': snap.get('tag', ''),
+                        'date': snap.get('created_at', ''),
+                        'message': snap.get('message', ''),
+                        'hash': None,
+                        'size': 0,
+                        'changed': True,
+                        'removed': True
+                    })
+                    prev_hash = None
+
+        return history
+
+    def search_in_snapshots(
+        self,
+        query: str,
+        file_filter: Optional[str] = None,
+        snapshot_ref: Optional[str] = None,
+        case_sensitive: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for text content across snapshots.
+        
+        Args:
+            query: Text to search for
+            file_filter: Optional glob pattern to filter files
+            snapshot_ref: Optional snapshot to search in (default: all)
+            case_sensitive: Case-sensitive search
+        """
+        import fnmatch
+        results = []
+        search_query = query if case_sensitive else query.lower()
+
+        if snapshot_ref:
+            snap_id = self.store.resolve_snapshot_ref(snapshot_ref)
+            snapshots_to_search = [{'id': snap_id}]
+        else:
+            snapshots_to_search = self.store.list_snapshots(include_autosave=False)
+
+        seen_hashes = set()  # Avoid searching same content twice
+
+        for snap_info in snapshots_to_search:
+            snapshot = self.store.get_snapshot(snap_info['id'])
+            if not snapshot:
+                continue
+
+            for file_entry in snapshot.files:
+                # Apply file filter
+                if file_filter and not fnmatch.fnmatch(file_entry.path, file_filter):
+                    continue
+
+                # Skip already-searched content
+                if file_entry.hash in seen_hashes:
+                    continue
+                seen_hashes.add(file_entry.hash)
+
+                try:
+                    compressed = self.store.db.get_content(file_entry.hash)
+                    if not compressed:
+                        continue
+                    content = self.store.compressor.decompress(compressed).decode('utf-8', errors='replace')
+                    search_content = content if case_sensitive else content.lower()
+
+                    if search_query in search_content:
+                        # Find matching lines
+                        matches = []
+                        for i, line in enumerate(content.splitlines(), 1):
+                            line_search = line if case_sensitive else line.lower()
+                            if search_query in line_search:
+                                matches.append({'line': i, 'content': line.strip()})
+                                if len(matches) >= 5:  # Cap at 5 matches per file
+                                    break
+
+                        results.append({
+                            'snapshot_id': snap_info['id'],
+                            'tag': snap_info.get('tag', ''),
+                            'file_path': file_entry.path,
+                            'matches': matches,
+                            'total_matches': sum(
+                                1 for l in content.splitlines()
+                                if search_query in (l if case_sensitive else l.lower())
+                            )
+                        })
+                except Exception:
+                    continue
+
+                if len(results) >= 50:  # Cap total results
+                    return results
+
+        return results
+
+    def generate_changelog(
+        self,
+        from_ref: str,
+        to_ref: Optional[str] = None
+    ) -> str:
+        """
+        Generate a Keep-a-Changelog formatted changelog between two snapshots.
+        
+        Args:
+            from_ref: Source snapshot ID or tag
+            to_ref: Target snapshot ID or tag (default: latest)
+        """
+        diff = self.diff_snapshots(from_ref, to_ref or 'current')
+
+        # Get snapshot info for header
+        from_id = self.store.resolve_snapshot_ref(from_ref)
+        from_snap_info = next(
+            (s for s in self.store.list_snapshots() if s['id'] == from_id), {}
+        )
+
+        if to_ref and to_ref != 'current':
+            to_id = self.store.resolve_snapshot_ref(to_ref)
+            to_snap_info = next(
+                (s for s in self.store.list_snapshots() if s['id'] == to_id), {}
+            )
+            to_label = to_snap_info.get('tag', f"#{to_id}")
+            to_date = to_snap_info.get('created_at', '')
+        else:
+            to_label = "current"
+            to_date = datetime.now().strftime("%Y-%m-%d")
+
+        from_label = from_snap_info.get('tag', f"#{from_id}")
+
+        lines = []
+        lines.append(f"## [{to_label}] - {to_date}")
+        lines.append(f"*Compared to {from_label}*")
+        lines.append("")
+
+        if diff.files_added:
+            lines.append("### Added")
+            for path in sorted(diff.files_added):
+                lines.append(f"- `{path}`")
+            lines.append("")
+
+        if diff.files_modified:
+            lines.append("### Changed")
+            for entry in sorted(diff.files_modified, key=lambda e: e.file_path):
+                lines.append(f"- `{entry.file_path}`")
+            lines.append("")
+
+        if diff.files_removed:
+            lines.append("### Removed")
+            for path in sorted(diff.files_removed):
+                lines.append(f"- ~~`{path}`~~")
+            lines.append("")
+
+        # Summary line
+        total = diff.total_changes
+        lines.append(f"---")
+        lines.append(f"*{len(diff.files_added)} added, {len(diff.files_modified)} changed, {len(diff.files_removed)} removed ({total} total changes, {diff.significance_score:.0%} significance)*")
+
+        return "\n".join(lines)

@@ -77,9 +77,9 @@ class DocumentationGenerator:
                 if path.is_file():
                     files.append(path)
                 elif path.is_dir():
-                    files.extend(self.filter.scan_directory(path))
+                    files.extend(list(self.filter.scan_directory(path)))
         else:
-            files = self.filter.scan_directory(self.config.project_path)
+            files = list(self.filter.scan_directory(self.config.project_path))
 
         # Apply exclusions
         if exclude_paths:
