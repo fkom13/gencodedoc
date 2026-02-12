@@ -1,0 +1,9 @@
+ignore:
+  dirs:
+    - vendor
+    - bin
+    - .git
+  extensions:
+    - .exe
+    - .test
+    - .out

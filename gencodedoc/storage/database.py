@@ -287,6 +287,25 @@ class Database:
 
             return len(old_ids)
 
+    def cleanup_expired_autosaves(self, delete_after_days: int) -> int:
+        """Delete autosaves older than X days"""
+        if delete_after_days <= 0:
+            return 0
+            
+        with self.connection() as conn:
+            cursor = conn.execute("""
+                SELECT id FROM snapshots
+                WHERE is_autosave = 1
+                AND created_at < datetime('now', ?)
+            """, (f'-{delete_after_days} days',))
+
+            old_ids = [row['id'] for row in cursor.fetchall()]
+
+            for snapshot_id in old_ids:
+                self.delete_snapshot(snapshot_id)
+
+            return len(old_ids)
+
     def cleanup_orphaned_contents(self) -> int:
         """Remove file_contents that are no longer referenced by any snapshot"""
         with self.connection() as conn:

@@ -1,0 +1,13 @@
+ignore:
+  dirs:
+    - node_modules
+    - dist
+    - .git
+    - .cache
+    - .parcel-cache
+  extensions:
+    - .map
+    - .min.js
+    - .min.css
+    - .css.map
+    - .js.map

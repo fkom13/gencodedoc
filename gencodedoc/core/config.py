@@ -103,34 +103,47 @@ class ConfigManager:
         return ignore
 
     def _apply_preset(self, config: ProjectConfig, preset: str) -> None:
-        """Apply preset"""
-        presets = {
-            'python': {
-                'dirs': ['venv', '.venv', '__pycache__', 'dist', 'build'],
-                'extensions': ['.pyc', '.pyo', '.pyd']
-            },
-            'nodejs': {
-                'dirs': ['node_modules', 'dist', 'build'],
-                'files': ['package-lock.json', 'yarn.lock']
-            },
-            'web': {
-                'dirs': ['node_modules', 'dist'],
-                'extensions': ['.map', '.min.js']
-            },
-            'go': {
-                'dirs': ['vendor', 'bin'],
-                'extensions': ['.exe']
+        """Apply preset from YAML or fallback to built-in"""
+        # Try loading from YAML file in generic config dir
+        preset_path = Path(__file__).parent.parent / "config" / "presets" / f"{preset}.yaml"
+        
+        if preset_path.exists():
+            try:
+                with open(preset_path) as f:
+                    p = yaml.safe_load(f) or {}
+                    if 'ignore' in p:
+                        p = p['ignore']  # Handle nested 'ignore' key if present or flat structure
+            except Exception:
+                p = {} # Fallback on error
+        else:
+            # Fallback to hardcoded presets
+            presets = {
+                'python': {
+                    'dirs': ['venv', '.venv', '__pycache__', 'dist', 'build', '.git', '.idea', '.vscode'],
+                    'extensions': ['.pyc', '.pyo', '.pyd', '.so', '.dll', '.class'],
+                    'files': ['.DS_Store', 'Thumbs.db']
+                },
+                'nodejs': {
+                    'dirs': ['node_modules', 'dist', 'build', 'coverage', '.git'],
+                    'files': ['package-lock.json', 'yarn.lock', '.DS_Store']
+                },
+                'web': {
+                    'dirs': ['node_modules', 'dist', '.git'],
+                    'extensions': ['.map', '.min.js', '.css.map']
+                },
+                'go': {
+                    'dirs': ['vendor', 'bin', '.git'],
+                    'extensions': ['.exe', '.test']
+                }
             }
-        }
+            p = presets.get(preset, {})
 
-        if preset in presets:
-            p = presets[preset]
-            if 'dirs' in p:
-                config.ignore.dirs.extend(p['dirs'])
-            if 'files' in p:
-                config.ignore.files.extend(p['files'])
-            if 'extensions' in p:
-                config.ignore.extensions.extend(p['extensions'])
+        if 'dirs' in p:
+            config.ignore.dirs.extend([d for d in p['dirs'] if d not in config.ignore.dirs])
+        if 'files' in p:
+            config.ignore.files.extend([f for f in p['files'] if f not in config.ignore.files])
+        if 'extensions' in p:
+            config.ignore.extensions.extend([e for e in p['extensions'] if e not in config.ignore.extensions])
 
     @staticmethod
     def _deep_merge(dict1: dict, dict2: dict) -> dict:

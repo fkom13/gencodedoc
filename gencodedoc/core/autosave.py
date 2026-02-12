@@ -189,6 +189,11 @@ class AutosaveManager:
             # Cleanup old autosaves
             max_keep = self.config.autosave.retention.max_autosaves
             self.version_manager.cleanup_old_autosaves(max_keep)
+            
+            # Cleanup expired autosaves
+            delete_after_days = self.config.autosave.retention.delete_after_days
+            if delete_after_days > 0:
+                self.version_manager.cleanup_expired_autosaves(delete_after_days)
 
         except Exception as e:
             print(f"Autosave failed: {e}")

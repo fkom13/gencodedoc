@@ -153,10 +153,14 @@ GenCodeDoc offre une CLI complète et une API MCP/REST riche.
 -   `gencodedoc snapshot cleanup` : Nettoyage et maintenance.
 
 #### Nouveautés CLI v2.1 🚀
+- **Presets Configurables (YAML)** : Les presets (`python`, `node`, `web`, `go`) sont maintenant définis dans des fichiers YAML modifiables (`config/presets/`).
+- **Compression & Rétention** : Support de la compression `zstandard` (configurable) et nettoyage automatique des vieux snapshots (retention policy).
+- **Mode Debug** : Activez les logs détaillés via `export GENCODEDOC_DEBUG=1`.
 - `gencodedoc snapshot cat <ref> <file>` : Affiche le contenu d'un fichier d'une version donnée.
 - `gencodedoc snapshot files <ref>` : Liste les fichiers d'un snapshot (avec filtres).
 - `gencodedoc snapshot export <ref>` : Exporte un snapshot vers un dossier ou une archive `.tar.gz`.
 - `gencodedoc snapshot restore ... --filter` : Restauration partielle de fichiers.
+
 
 ### Outils MCP (22 outils)
 

@@ -1,9 +1,9 @@
 .PHONY: help install install-dev test test-cov test-watch lint format clean clean-cache dev shell docs serve-mcp demo info all
 
 # Variables
-PROJECT_DIR := /home/fkomp/Bureau/oracle/utilitaires/gencodedoc/gencodedoc
-VENV_DIR := /mnt/windows/App_Wubuntu/python_envs
-CACHE_DIR := $(VENV_DIR)/pypoetry-cache
+PROJECT_DIR := $(shell pwd)
+VENV_DIR := $(shell poetry env info --path 2>/dev/null || echo ".venv")
+CACHE_DIR := $(shell poetry config cache-dir 2>/dev/null || echo "~/.cache/pypoetry")
 
 PYTHON := poetry run python
 PYTEST := poetry run pytest

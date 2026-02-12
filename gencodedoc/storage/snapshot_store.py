@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 class SnapshotStore:
     """Manages snapshot storage and retrieval"""
 
-    def __init__(self, storage_path: Path, project_path: Path, compression_level: int = 3):
+    def __init__(self, storage_path: Path, project_path: Path, compression_level: int = 3, compression_enabled: bool = True):
         self.storage_path = storage_path
         self.project_path = project_path
-        logger.debug(f"SnapshotStore init: storage={storage_path}, project={project_path}")
+        self.compression_enabled = compression_enabled
+        logger.debug(f"SnapshotStore init: storage={storage_path}, project={project_path}, compression={'ON' if compression_enabled else 'OFF'}")
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         self.db = Database(storage_path / "gencodedoc.db")
@@ -82,12 +83,18 @@ class SnapshotStore:
 
             # Store content if not already stored (deduplication)
             if not self.db.content_exists(file_entry.hash):
-                # Read and compress file - utiliser chemin ABSOLU
-                file_path = self.project_path / file_entry.path  # ✅ ABSOLU
+                # Read file
+                file_path = self.project_path / file_entry.path
                 if file_path.exists():
-                    compressed, orig_size, comp_size = self.compressor.compress_file(
-                        str(file_path)
-                    )
+                    if self.compression_enabled:
+                        compressed, orig_size, comp_size = self.compressor.compress_file(str(file_path))
+                    else:
+                        # Store raw content
+                        content = file_path.read_bytes()
+                        compressed = content
+                        orig_size = len(content)
+                        comp_size = orig_size
+                    
                     total_compressed += comp_size
 
                     # Store in database

@@ -157,6 +157,11 @@ gencodedoc config preset python
 gencodedoc config ignore --add-dir dist
 gencodedoc config ignore --add-ext .tmp
 gencodedoc config ignore --list-all
+
+# Customizable Presets
+# Presets are now defined in YAML files (gencodedoc/config/presets/*.yaml) 
+# and can be modified directly in the source code.
+
 Project Status
 Bash
 

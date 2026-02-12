@@ -26,7 +26,8 @@ class VersionManager:
         self.store = SnapshotStore(
             storage_path=storage_path,
             project_path=config.project_path,
-            compression_level=config.compression_level
+            compression_level=config.compression_level,
+            compression_enabled=config.compression_enabled
         )
 
     def create_snapshot(
@@ -447,6 +448,10 @@ class VersionManager:
     def cleanup_old_autosaves(self, max_keep: int = 50) -> int:
         """Clean up old autosaves"""
         return self.store.cleanup_old_autosaves(max_keep)
+
+    def cleanup_expired_autosaves(self, delete_after_days: int) -> int:
+        """Clean up expired autosaves"""
+        return self.store.db.cleanup_expired_autosaves(delete_after_days)
 
     def cleanup_orphaned_contents(self) -> int:
         """Clean up orphaned file contents from the database"""

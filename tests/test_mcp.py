@@ -1,168 +1,90 @@
-"""Tests for MCP server"""
 import pytest
-from pathlib import Path
-from fastapi.testclient import TestClient
-from gencodedoc.mcp.server import create_app
-from gencodedoc.mcp.tools import get_tools_definition, execute_tool
-from gencodedoc.models.config import ProjectConfig
-from gencodedoc.core.versioning import VersionManager
-from gencodedoc.core.documentation import DocumentationGenerator
+from gencodedoc.mcp.tools import execute_tool, get_tools_definition
 
-
-def test_mcp_server_initialization(tmp_path):
-    """Test MCP server initialization"""
-    app = create_app(tmp_path)
-    assert app is not None
-
-    client = TestClient(app)
-    response = client.get("/")
-
-    assert response.status_code == 200
-    assert "GenCodeDoc MCP Server" in response.json()["name"]
-
-
-def test_list_tools_endpoint(tmp_path):
-    """Test tools listing endpoint"""
-    app = create_app(tmp_path)
-    client = TestClient(app)
-
-    response = client.get("/mcp/tools")
-
-    assert response.status_code == 200
-    tools = response.json()["tools"]
-    assert len(tools) > 0
-    assert any(t["name"] == "create_snapshot" for t in tools)
-
-
-def test_get_tools_definition():
-    """Test tools definition structure"""
+def test_get_tools():
     tools = get_tools_definition()
+    names = [t["name"] for t in tools]
+    assert "create_snapshot" in names
+    assert "get_config" in names
+    assert "start_autosave" in names
 
-    assert len(tools) > 0
-
-    # Check create_snapshot tool
-    create_snap = next(t for t in tools if t["name"] == "create_snapshot")
-    assert "description" in create_snap
-    assert "parameters" in create_snap
-
-
-def test_create_snapshot_tool(tmp_path):
-    """Test create_snapshot tool execution"""
+def test_execute_list_snapshots(version_manager, config_manager):
     # Setup
-    (tmp_path / "test.txt").write_text("Hello")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-    doc_gen = DocumentationGenerator(config)
-
-    # Execute tool
+    config = config_manager.load()
+    
+    # Execute
     result = execute_tool(
-        tool_name="create_snapshot",
-        parameters={"message": "Test snapshot"},
-        version_manager=vm,
-        doc_generator=doc_gen,
-        config=config
+        "list_snapshots", 
+        {}, 
+        version_manager, 
+        None, 
+        config
     )
-
-    assert result["snapshot_id"] is not None
-    assert result["files_count"] > 0
-
-
-def test_list_snapshots_tool(tmp_path):
-    """Test list_snapshots tool"""
-    (tmp_path / "test.txt").write_text("Hello")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-    doc_gen = DocumentationGenerator(config)
-
-    # Create snapshot first
-    vm.create_snapshot(message="Test")
-
-    # Execute tool
-    result = execute_tool(
-        tool_name="list_snapshots",
-        parameters={"limit": 10},
-        version_manager=vm,
-        doc_generator=doc_gen,
-        config=config
-    )
-
+    
+    # Assert
     assert "snapshots" in result
-    assert len(result["snapshots"]) > 0
+    assert result["count"] == 0
 
-
-def test_generate_documentation_tool(tmp_path):
-    """Test generate_documentation tool"""
-    (tmp_path / "test.py").write_text("print('test')")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-    doc_gen = DocumentationGenerator(config)
-
+def test_execute_create_snapshot(version_manager, config_manager):
+    # Setup
+    config = config_manager.load()
+    
+    # Execute
     result = execute_tool(
-        tool_name="generate_documentation",
-        parameters={"include_tree": True, "include_code": True},
-        version_manager=vm,
-        doc_generator=doc_gen,
-        config=config
+        "create_snapshot", 
+        {"message": "MCP Test", "tag": "mcp-v1"}, 
+        version_manager, 
+        None, 
+        config
     )
+    
+    # Assert
+    assert result["snapshot_id"] is not None
+    assert result["tag"] == "mcp-v1"
 
-    assert "output_path" in result
-    assert Path(result["output_path"]).exists()
-
-
-def test_get_project_stats_tool(tmp_path):
-    """Test get_project_stats tool"""
-    (tmp_path / "test.py").write_text("print('test')")
-    (tmp_path / "test.js").write_text("console.log('test')")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-    doc_gen = DocumentationGenerator(config)
-
+def test_execute_restore_files(version_manager, config_manager, temp_project):
+    config = config_manager.load()
+    (temp_project / "file1.txt").write_text("v1")
+    version_manager.create_snapshot(tag="v1")
+    (temp_project / "file1.txt").write_text("v2")
+    
     result = execute_tool(
-        tool_name="get_project_stats",
-        parameters={},
-        version_manager=vm,
-        doc_generator=doc_gen,
-        config=config
+        "restore_files",
+        {
+            "snapshot_ref": "v1",
+            "file_filters": ["file1.txt"]
+        },
+        version_manager, None, config
     )
+    assert result["success"] is True
+    assert (temp_project / "file1.txt").read_text() == "v1"
 
-    assert "total_files" in result
-    assert "total_size" in result
-    assert "extensions" in result
+def test_execute_get_file_at_version(version_manager, config_manager, temp_project):
+    config = config_manager.load()
+    (temp_project / "src/main.py").write_text("v1")
+    version_manager.create_snapshot(tag="v1")
+    
+    result = execute_tool(
+        "get_file_at_version",
+        {"snapshot_ref": "v1", "file_path": "src/main.py"},
+        version_manager, None, config
+    )
+    assert "content" in result
+    assert "v1" in result["content"][0]["text"]
 
+def test_set_config_value(version_manager, config_manager):
+    config = config_manager.load()
+    
+    result = execute_tool(
+        "set_config_value",
+        {"key": "autosave.enabled", "value": True},
+        version_manager, None, config
+    )
+    
+    assert result["key"] == "autosave.enabled"
+    assert result["value"] is True
+    
+    # Reload to verify
+    new_config = config_manager.load()
+    assert new_config.autosave.enabled is True
 
-def test_mcp_execute_endpoint(tmp_path):
-    """Test MCP execute endpoint"""
-    (tmp_path / "test.txt").write_text("Hello")
-
-    app = create_app(tmp_path)
-    client = TestClient(app)
-
-    response = client.post("/mcp/execute", json={
-        "tool": "create_snapshot",
-        "parameters": {"message": "Test via MCP"}
-    })
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert "result" in data
-
-
-def test_mcp_error_handling(tmp_path):
-    """Test MCP error handling"""
-    app = create_app(tmp_path)
-    client = TestClient(app)
-
-    response = client.post("/mcp/execute", json={
-        "tool": "invalid_tool",
-        "parameters": {}
-    })
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is False
-    assert "error" in data

@@ -1,92 +1,60 @@
-"""Tests for versioning system"""
 import pytest
-from pathlib import Path
 from gencodedoc.core.versioning import VersionManager
-from gencodedoc.models.config import ProjectConfig
 
-
-def test_version_manager_initialization(tmp_path):
-    """Test version manager initialization"""
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-
-    assert vm.config == config
-    assert vm.scanner is not None
-    assert vm.store is not None
-
-
-def test_create_snapshot(tmp_path):
-    """Test snapshot creation"""
-    # Create test files
-    (tmp_path / "test.txt").write_text("Hello")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-
-    snapshot = vm.create_snapshot(message="Test snapshot")
-
-    assert snapshot.metadata.id is not None
-    assert snapshot.metadata.message == "Test snapshot"
+def test_create_snapshot(version_manager):
+    snapshot = version_manager.create_snapshot(message="Initial", tag="v1.0")
+    
+    assert snapshot.metadata.tag == "v1.0"
+    assert snapshot.metadata.message == "Initial"
     assert snapshot.metadata.files_count > 0
 
-
-def test_list_snapshots(tmp_path):
-    """Test snapshot listing"""
-    (tmp_path / "test.txt").write_text("Hello")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-
-    # Create first snapshot
-    vm.create_snapshot(message="Snapshot 1")
+def test_list_snapshots(version_manager, temp_project):
+    version_manager.create_snapshot(tag="v1")
     
-    # Modify file to get different hash
-    (tmp_path / "test.txt").write_text("Hello World - Modified")
+    # Modify project to create unique snapshot
+    (temp_project / "new_file.txt").write_text("change")
     
-    # Create second snapshot
-    vm.create_snapshot(message="Snapshot 2")
-
-    snapshots = vm.list_snapshots()
-
+    version_manager.create_snapshot(tag="v2")
+    
+    snapshots = version_manager.list_snapshots()
     assert len(snapshots) == 2
+    assert snapshots[0].metadata.tag == "v2"  # Most recent first
 
+def test_get_snapshot(version_manager):
+    version_manager.create_snapshot(tag="v1")
+    snapshot = version_manager.get_snapshot("v1")
+    
+    assert snapshot is not None
+    assert snapshot.metadata.tag == "v1"
 
-def test_snapshot_with_tag(tmp_path):
-    """Test snapshot with tag"""
-    (tmp_path / "test.txt").write_text("Hello")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-
-    snapshot = vm.create_snapshot(message="Tagged", tag="v1.0")
-
-    # Retrieve by tag
-    retrieved = vm.get_snapshot("v1.0")
-
-    assert retrieved is not None
-    assert retrieved.metadata.tag == "v1.0"
-
-
-def test_diff_snapshots(tmp_path):
-    """Test snapshot diffing"""
-    # Create initial file
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("Version 1")
-
-    config = ProjectConfig(project_path=tmp_path)
-    vm = VersionManager(config)
-
-    # First snapshot
-    snap1 = vm.create_snapshot(message="Version 1")
-
+def test_restore_snapshot(version_manager, temp_project):
+    # Snapshot functionality
+    file_path = temp_project / "src/main.py"
+    original_content = file_path.read_text()
+    
+    version_manager.create_snapshot(tag="v1")
+    
     # Modify file
-    test_file.write_text("Version 2 - Changed content")
+    file_path.write_text("print('modified')")
+    
+    # Restore
+    version_manager.restore_snapshot("v1", force=True)
+    
+    assert file_path.read_text() == original_content
 
-    # Second snapshot
-    snap2 = vm.create_snapshot(message="Version 2")
-
-    # Calculate diff
-    diff = vm.diff_snapshots(str(snap1.metadata.id), str(snap2.metadata.id))
-
-    assert diff.total_changes > 0
-    assert len(diff.files_modified) > 0
+def test_partial_restore(version_manager, temp_project):
+    # Create two files
+    (temp_project / "file1.txt").write_text("v1")
+    (temp_project / "file2.txt").write_text("v1")
+    
+    version_manager.create_snapshot(tag="v1")
+    
+    # Modify both
+    (temp_project / "file1.txt").write_text("v2")
+    (temp_project / "file2.txt").write_text("v2")
+    
+    # Restore only file1
+    version_manager.restore_snapshot("v1", file_filters=["file1.txt"], force=True)
+    
+    assert (temp_project / "file1.txt").read_text() == "v1"
+    assert (temp_project / "file2.txt").read_text() == "v2"

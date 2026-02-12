@@ -1,0 +1,16 @@
+ignore:
+  dirs:
+    - node_modules
+    - dist
+    - build
+    - coverage
+    - .git
+    - .next
+    - .nuxt
+    - .output
+  files:
+    - package-lock.json
+    - yarn.lock
+    - pnpm-lock.yaml
+    - .DS_Store
+    - .env

@@ -1,0 +1,24 @@
+ignore:
+  dirs:
+    - venv
+    - .venv
+    - __pycache__
+    - dist
+    - build
+    - .git
+    - .idea
+    - .vscode
+    - .pytest_cache
+    - htmlcov
+  extensions:
+    - .pyc
+    - .pyo
+    - .pyd
+    - .so
+    - .dll
+    - .class
+    - .coverage
+  files:
+    - .DS_Store
+    - Thumbs.db
+    - .env
