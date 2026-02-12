@@ -203,7 +203,13 @@ def diff_snapshots(
 
     if filter:
         console.print(f"[dim]🔍 Filtered: {', '.join(filter)}[/dim]")
-    console.print(diff_output)
+    
+    # Rich syntax highlighting for diff
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    
+    syntax = Syntax(diff_output, "diff", theme="monokai", line_numbers=False)
+    console.print(Panel(syntax, title=f"📊 Diff: {from_ref} → {to_ref}", border_style="blue"))
 
 
 @app.command("delete")

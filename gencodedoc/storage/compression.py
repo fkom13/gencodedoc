@@ -30,8 +30,13 @@ class Compressor:
         return compressed, original_size, compressed_size
 
     def decompress(self, data: bytes) -> bytes:
-        """Decompress data"""
-        return self._decompressor.decompress(data)
+        """Decompress data, fallback to original if not compressed"""
+        try:
+            return self._decompressor.decompress(data)
+        except zstd.ZstdError:
+            # Not compressed or invalid zstd data, return as is
+            return data
+
 
     def compress_file(self, file_path: str) -> Tuple[bytes, int, int]:
         """

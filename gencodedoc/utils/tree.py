@@ -15,19 +15,56 @@ class TreeGenerator:
         is_last: bool = True,
         max_depth: Optional[int] = None,
         current_depth: int = 0,
-        filter_func: Optional[Callable] = None
+        filter_func: Optional[Callable] = None,
+        paginate: bool = False,
+        page: int = 1,
+        limit: int = 50
     ) -> str:
-        """Generate tree structure"""
-        if max_depth is not None and current_depth >= max_depth:
-            return ''
+        """Generate tree structure string (optionally paginated)"""
+        if paginate:
+            all_lines = self.generate_lines(root, prefix, is_last, max_depth, current_depth, filter_func)
+            total_lines = len(all_lines)
+            start = (page - 1) * limit
+            end = start + limit
+            
+            page_lines = all_lines[start:end]
+            
+            if not page_lines:
+                return f"(Page {page} empty - Total lines: {total_lines})"
+            
+            header = []
+            if page > 1:
+                header = [f"... (lines 1-{start} hidden) ..."]
+                
+            footer = []
+            if end < total_lines:
+                footer = [f"... ({total_lines - end} more lines) ..."]
+                
+            return "\n".join(header + page_lines + footer)
+        else:
+            return "\n".join(self.generate_lines(root, prefix, is_last, max_depth, current_depth, filter_func))
 
-        tree = ''
+    def generate_lines(
+        self,
+        root: Path,
+        prefix: str = '',
+        is_last: bool = True,
+        max_depth: Optional[int] = None,
+        current_depth: int = 0,
+        filter_func: Optional[Callable] = None
+    ) -> list[str]:
+        """Generate list of tree lines"""
+        if max_depth is not None and current_depth >= max_depth:
+            return []
+
+        lines = []
         basename = root.name
 
         if current_depth == 0:
-            tree += f"{basename}\n"
+            lines.append(f"{basename}")
         else:
-            tree += prefix + ('└── ' if is_last else '├── ') + basename + '\n'
+            connector = '└── ' if is_last else '├── '
+            lines.append(f"{prefix}{connector}{basename}")
 
         try:
             items = sorted(root.iterdir(), key=lambda x: (not x.is_dir(), x.name))
@@ -47,21 +84,22 @@ class TreeGenerator:
                     new_prefix = prefix + ('    ' if is_last else '│   ')
 
                 if item.is_dir():
-                    tree += self.generate(
+                    lines.extend(self.generate_lines(
                         item,
                         new_prefix,
                         is_last_item,
                         max_depth,
                         current_depth + 1,
                         filter_func
-                    )
+                    ))
                 else:
-                    tree += new_prefix + ('└── ' if is_last_item else '├── ') + item.name + '\n'
+                    connector = '└── ' if is_last_item else '├── '
+                    lines.append(f"{new_prefix}{connector}{item.name}")
 
         except PermissionError:
             pass
 
-        return tree
+        return lines
 
     def generate_with_selection(
         self,

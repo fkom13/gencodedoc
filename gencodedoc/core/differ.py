@@ -36,6 +36,8 @@ class DiffGenerator:
             return self._generate_unified(snapshot_diff)
         elif format == 'json':
             return self._generate_json(snapshot_diff)
+        elif format == 'markdown':
+            return self._generate_markdown(snapshot_diff)
         elif format == 'ast':
             return self._generate_ast(snapshot_diff)
         else:
@@ -124,6 +126,61 @@ class DiffGenerator:
             result["changes"]["modified"].append(mod_entry)
 
         return json.dumps(result, indent=2)
+
+    def _generate_markdown(self, diff: SnapshotDiff) -> str:
+        """Generate Markdown-formatted diff (LLM & human-friendly)"""
+        lines = []
+
+        lines.append(f"## 📊 Diff: `{diff.from_snapshot}` → `{diff.to_snapshot}`")
+        lines.append(f"")
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        lines.append(f"| Total changes | **{diff.total_changes}** |")
+        lines.append(f"| Significance | **{diff.significance_score:.1%}** |")
+        lines.append(f"| Files added | {len(diff.files_added)} |")
+        lines.append(f"| Files removed | {len(diff.files_removed)} |")
+        lines.append(f"| Files modified | {len(diff.files_modified)} |")
+        lines.append("")
+
+        if diff.files_added:
+            lines.append("### ➕ Added Files")
+            for path in diff.files_added:
+                lines.append(f"- `{path}`")
+            lines.append("")
+
+        if diff.files_removed:
+            lines.append("### ➖ Removed Files")
+            for path in diff.files_removed:
+                lines.append(f"- ~~`{path}`~~")
+            lines.append("")
+
+        if diff.files_modified:
+            lines.append("### ✏️ Modified Files")
+            for entry in diff.files_modified:
+                lines.append(f"\n#### `{entry.file_path}`")
+
+                old_content = self._get_file_content(entry.old_hash)
+                new_content = self._get_file_content(entry.new_hash)
+
+                if old_content and new_content:
+                    unified = list(difflib.unified_diff(
+                        old_content.splitlines(keepends=True),
+                        new_content.splitlines(keepends=True),
+                        fromfile=f"a/{entry.file_path}",
+                        tofile=f"b/{entry.file_path}",
+                        lineterm='',
+                        n=self.config.unified_context
+                    ))
+                    if unified:
+                        lines.append("```diff")
+                        lines.extend(unified)
+                        lines.append("```")
+                    else:
+                        lines.append("*(No visible content changes)*")
+                else:
+                    lines.append("*(Binary or unavailable)*")
+
+        return '\n'.join(lines)
 
     def _generate_ast(self, diff: SnapshotDiff) -> str:
         """

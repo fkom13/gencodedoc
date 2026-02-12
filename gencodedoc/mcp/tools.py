@@ -143,7 +143,7 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                     },
                     "format": {
                         "type": "string",
-                        "enum": ["unified", "json"],
+                        "enum": ["unified", "json", "markdown"],
                         "description": "Diff output format",
                         "default": "unified"
                     },
@@ -205,6 +205,21 @@ def get_tools_definition() -> List[Dict[str, Any]]:
                     "max_depth": {
                         "type": "integer",
                         "description": "Maximum tree depth"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number for pagination",
+                        "default": 1
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Lines per page",
+                        "default": 50
+                    },
+                    "ignore_add": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Ad-hoc ignore patterns (e.g. ['node_modules', '*.log'])"
                     }
                 }
             }
@@ -768,24 +783,52 @@ Files (showing first 20):
     elif tool_name == "preview_structure":
         from ..utils.tree import TreeGenerator
         from ..utils.filters import FileFilter
+        import copy
+
+        # Handle ad-hoc filtering
+        ignore_config = config.ignore
+        if parameters.get("ignore_add"):
+            # Create a deep copy to avoid modifying global config
+            ignore_config = copy.deepcopy(config.ignore)
+            # Add patterns to appropriate lists based on content
+            for pattern in parameters["ignore_add"]:
+                if pattern.startswith('.'):
+                    ignore_config.extensions.append(pattern)
+                elif '/' in pattern or '*' in pattern:
+                    ignore_config.patterns.append(pattern)
+                else:
+                    # Ambiguous, add to both files and dirs to be safe
+                    ignore_config.files.append(pattern)
+                    ignore_config.dirs.append(pattern)
 
         tree_gen = TreeGenerator()
-        file_filter = FileFilter(config.ignore, config.project_path)
+        file_filter = FileFilter(ignore_config, config.project_path)
+        
+        # Pagination parameters
+        paginate = "page" in parameters or "limit" in parameters
+        page = parameters.get("page", 1)
+        limit = parameters.get("limit", 50)
 
         tree = tree_gen.generate(
             config.project_path,
             max_depth=parameters.get("max_depth"),
-            filter_func=lambda p: not file_filter.should_ignore(p, p.is_dir())
+            filter_func=lambda p: not file_filter.should_ignore(p, p.is_dir()),
+            paginate=paginate,
+            page=page,
+            limit=limit
         )
 
         text = f"""📁 Project Structure: {config.project_name or config.project_path.name}
+{'(Paginated: page ' + str(page) + ' limit ' + str(limit) + ')' if paginate else ''}
 
 {tree}
 """
 
         return {
             "content": [{"type": "text", "text": text}],
-            "tree": tree
+            "tree": tree,
+            "page": page if paginate else 1,
+            "total_pages": None  # TreeGenerator doesn't calculate total pages easily yet
         }
 
     elif tool_name == "get_project_stats":

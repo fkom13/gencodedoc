@@ -15,12 +15,17 @@ app = typer.Typer(
 console = Console()
 
 # Import des sous-commandes
-from . import snapshot_cmd, doc_cmd, config_cmd, mcp_cmd
+from . import snapshot_cmd, doc_cmd, config_cmd, mcp_cmd, tree_cmd
 
 app.add_typer(snapshot_cmd.app, name="snapshot")
 app.add_typer(doc_cmd.app, name="doc")
 app.add_typer(config_cmd.app, name="config")
 app.add_typer(mcp_cmd.app, name="mcp")
+app.add_typer(tree_cmd.app, name="viz")  # 'tree' is often expected as a direct command, but here we add it as subcommand or direct
+
+# Direct command registration for 'tree'
+from .tree_cmd import tree_command
+app.command("tree")(tree_command)
 
 
 @app.command()
